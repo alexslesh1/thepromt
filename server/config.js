@@ -1,0 +1,85 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const ROOT_DIR = path.resolve(__dirname, '..');
+
+/** Минимальный парсер .env — чтобы не тянуть лишнюю зависимость. */
+function loadDotEnv() {
+  const file = path.join(ROOT_DIR, '.env');
+  if (!fs.existsSync(file)) return;
+  for (const rawLine of fs.readFileSync(file, 'utf8').split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+loadDotEnv();
+
+const env = process.env;
+const bool = (value, fallback = false) =>
+  value === undefined ? fallback : ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+
+export const config = {
+  env: env.NODE_ENV || 'development',
+  get isProduction() {
+    return this.env === 'production';
+  },
+  port: Number(env.PORT || 3000),
+  sessionSecret: env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+  dataDir: path.join(ROOT_DIR, 'data'),
+  dbFile: env.DB_FILE || path.join(ROOT_DIR, 'data', 'promptshare.db'),
+  uploadsDir: path.join(ROOT_DIR, 'uploads'),
+  publicDir: path.join(ROOT_DIR, 'public'),
+  adminEmails: (env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+  mail: {
+    host: env.SMTP_HOST || '',
+    port: Number(env.SMTP_PORT || 587),
+    secure: bool(env.SMTP_SECURE, false),
+    user: env.SMTP_USER || '',
+    pass: env.SMTP_PASS || '',
+    from: env.MAIL_FROM || 'PromptShare <no-reply@promptshare.local>',
+  },
+  otp: {
+    length: 6,
+    ttlMinutes: 10,
+    maxAttempts: 5,
+    resendCooldownSeconds: 60,
+  },
+  session: {
+    cookieName: 'ps_session',
+    ttlDays: 30,
+  },
+  uploads: {
+    maxBytes: 5 * 1024 * 1024,
+    allowedMime: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+  },
+  feed: {
+    pageSize: 20,
+  },
+};
+
+/**
+ * В dev-режиме без настроенного SMTP код подтверждения возвращается
+ * прямо в ответе API, чтобы приложением можно было пользоваться сразу.
+ */
+export const devCodesEnabled = !config.isProduction && !config.mail.host;
+
+for (const dir of [config.dataDir, config.uploadsDir]) {
+  fs.mkdirSync(dir, { recursive: true });
+}
