@@ -240,18 +240,27 @@ await step('админ-панель показывает жалобы', async ()
   await shot('11-admin');
 });
 
-await step('уведомления отделены от сообщений', async () => {
+await step('уведомления: вкладка «Активность» отделена от «Модерация»', async () => {
   await page.goto(`${base}/notifications`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.tabs');
+  const tabsText = await page.locator('.tabs').innerText();
+  if (!tabsText.includes('Активность') || !tabsText.includes('Модерация')) {
+    throw new Error(`не нашли обе вкладки в объединённых «Уведомлениях»: ${tabsText}`);
+  }
   await page.waitForSelector('.notif, .empty', { timeout: 8000 });
-  // Жалобы и решения модерации живут в «Сообщениях», в «Уведомлениях» их быть не должно.
+  // Жалобы и решения модерации живут во вкладке «Модерация», в «Активности» их быть не должно.
   const activity = await page.locator('.col-main').innerText();
-  if (/жалоб/i.test(activity)) throw new Error('жалоба попала в ленту уведомлений');
+  if (/жалоб/i.test(activity)) throw new Error('жалоба попала в ленту активности');
   await shot('12-notifications');
 
-  await page.goto(`${base}/messages`, { waitUntil: 'networkidle' });
+  await page.locator('.tabs .tab', { hasText: 'Модерация' }).click();
   await page.waitForSelector('.notif', { timeout: 8000 });
-  const messages = await page.locator('.col-main').innerText();
-  if (!/жалоб/i.test(messages)) throw new Error('жалоба не попала в «Сообщения»');
+  const moderation = await page.locator('.col-main').innerText();
+  if (!/жалоб/i.test(moderation)) throw new Error('жалоба не попала во вкладку «Модерация»');
+
+  // Старый URL /messages должен честно переадресовывать сюда же.
+  await page.goto(`${base}/messages`, { waitUntil: 'networkidle' });
+  await page.waitForURL(/\/notifications/);
 });
 
 await step('настройки профиля', async () => {
@@ -315,42 +324,49 @@ await step('публикация промпта с опросом и голос�
   await shot('17-poll');
 });
 
-await step('раздел «Сообщения»', async () => {
-  await page.goto(`${base}/messages`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('.notif', { timeout: 8000 });
-  await shot('18-messages');
-});
-
-await step('раздел Eduardo: вопрос-ответ, код (DeepSeek) и заглушка изображений', async () => {
+await step('раздел Eduardo: чат, модель, история и заглушка изображений', async () => {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.locator('.side-card.ai').click();
   await page.waitForURL(/\/eduardo/);
   await page.waitForSelector('.eduardo-usage');
+  const modelValue = await page.locator('.eduardo-toolbar select').inputValue();
+  if (modelValue !== 'eduardo-s1') throw new Error(`неожиданная модель по умолчанию: ${modelValue}`);
   await shot('19-eduardo');
 
-  await page.locator('form textarea').fill('Что такое ThePrompt?');
-  await page.locator('form button[type=submit]').click();
-  await page.waitForSelector('.eduardo-result', { timeout: 8000 });
-  const qaText = await page.locator('.eduardo-text').innerText();
-  if (!qaText.includes('Демо-ответ Eduardo')) throw new Error('текстовый результат пуст или не помечен демо-режимом');
-  await shot('20-eduardo-qa');
+  await page.locator('.dm-input').fill('Что такое ThePrompt?');
+  await page.locator('.comment-form button[type=submit]').click();
+  await page.waitForSelector('.dm-bubble .eduardo-sim-note', { timeout: 8000 });
+  const bubbleCount = await page.locator('.dm-bubble').count();
+  if (bubbleCount < 2) throw new Error('в чате должно быть хотя бы сообщение пользователя и ответ Eduardo');
+  const lastReply = await page.locator('.dm-bubble').last().locator('.dm-bubble-text').innerText();
+  if (!lastReply.includes('Демо-ответ Eduardo')) throw new Error('ответ пуст или не помечен демо-режимом');
+  await shot('20-eduardo-chat');
 
-  await page.getByRole('button', { name: 'Код', exact: true }).click();
-  await page.locator('form textarea').fill('Функция сортировки массива на JS');
-  await page.locator('form button[type=submit]').click();
-  await page.waitForSelector('.eduardo-result', { timeout: 8000 });
-  if (!(await page.locator('.eduardo-text').innerText()).includes('```')) throw new Error('код не сгенерирован');
+  // История переписки переживает перезагрузку страницы (хранится в БД, не только в памяти вкладки).
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('.dm-bubble');
+  if (await page.locator('.dm-bubble').count() < 2) throw new Error('история чата не подгрузилась после перезагрузки');
 
-  // Генерация изображений пока отключена — вкладка должна честно говорить «скоро».
-  await page.getByRole('button', { name: 'Изображение', exact: true }).click();
-  await page.waitForSelector('.empty h3');
-  const comingSoon = await page.locator('.empty h3').innerText();
-  if (!comingSoon.includes('Скоро будет доступно')) throw new Error('вкладка «Изображение» не показывает «скоро будет доступно»');
-  if (await page.locator('form textarea').count()) throw new Error('форма генерации изображений не должна отображаться');
+  // Генерация изображений пока отключена — честно предупреждаем тостом, а не притворяемся.
+  await page.locator('form.comment-form .icon-btn').click();
+  await page.waitForSelector('.toast', { timeout: 4000 });
+  const imgToast = await page.locator('.toast').last().innerText();
+  if (!imgToast.includes('скоро будет доступна')) throw new Error('кнопка изображений не предупреждает о «скоро будет доступно»');
   await shot('21-eduardo-image-soon');
+});
 
-  const history = await page.locator('#app').innerText();
-  if (!history.includes('История запросов')) throw new Error('блок истории не отрисован');
+await step('кнопка «Попробовать у Eduardo» переносит промпт поста в чат', async () => {
+  await page.goto(base, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.post');
+  const firstPromptText = await page.locator('.post .prompt-box pre').first().innerText();
+  await page.locator('.post .action.eduardo-try').first().click();
+  await page.waitForURL(/\/eduardo/);
+  await page.waitForSelector('.dm-bubble.mine', { timeout: 8000 });
+  const transferred = await page.locator('.dm-bubble.mine').last().locator('.dm-bubble-text').innerText();
+  if (transferred.trim() !== firstPromptText.trim()) {
+    throw new Error('текст промпта не перенёсся в чат Eduardo дословно');
+  }
+  await page.waitForSelector('.dm-bubble:not(.mine) .eduardo-sim-note', { timeout: 8000 });
 });
 
 await step('Pro: подписка активирует бейдж рядом с именем', async () => {
@@ -375,21 +391,15 @@ await step('Pro: подписка активирует бейдж рядом с 
   void hadBadgeBefore;
 });
 
-await step('Модели: своя модель в настройках/профиле, общая — из админки', async () => {
-  const uniqueName = `Тестовая модель ${Date.now()}`;
+await step('Модели: пользователи их не создают, только админ через каталог', async () => {
+  // Настройки больше не предлагают добавить свою модель.
+  // (403 для обычного пользователя при попытке создать модель уже покрыт
+  // тестом сервера в tests/api.test.js — здесь браузер залогинен админом.)
   await page.goto(`${base}/settings`, { waitUntil: 'networkidle' });
   await page.waitForSelector('form');
-  await page.locator('input[placeholder="Название модели"]').fill(uniqueName);
-  await page.getByRole('button', { name: 'Добавить', exact: true }).click();
-  await page.waitForSelector('.toast');
-  const settingsText = await page.locator('#app').innerText();
-  if (!settingsText.includes(uniqueName)) throw new Error('добавленная модель не отображается в настройках');
-  await shot('24-settings-models');
-
-  await page.goto(`${base}/u/admin`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('.profile-head');
-  const profileText = await page.locator('#app').innerText();
-  if (!profileText.includes(uniqueName)) throw new Error('своя модель не отображается на странице профиля');
+  if (await page.locator('input[placeholder="Название модели"]').count()) {
+    throw new Error('в Настройках всё ещё есть форма добавления своей модели — её должны были убрать');
+  }
 
   const globalName = `Общий каталог ${Date.now()}`;
   await page.goto(`${base}/admin?tab=models`, { waitUntil: 'networkidle' });
@@ -402,7 +412,7 @@ await step('Модели: своя модель в настройках/проф
   await shot('25-admin-models');
 });
 
-await step('Личные сообщения: диалог из профиля и доставка в реальном времени', async () => {
+await step('Сообщения (ЛС): диалог из профиля и доставка в реальном времени', async () => {
   // Второй пользователь в отдельном контексте браузера — своя сессия/кука,
   // как два разных человека за разными компьютерами.
   const ctx2 = await browser.newContext({ viewport: { width: 1200, height: 900 } });
@@ -445,7 +455,7 @@ await step('Личные сообщения: диалог из профиля и
 
   await page2.goto(`${base}/dm`, { waitUntil: 'networkidle' });
   const listText = await page2.locator('#app').innerText();
-  if (!listText.includes(text)) throw new Error('диалог не отображается в списке «Личные сообщения»');
+  if (!listText.includes(text)) throw new Error('диалог не отображается в списке «Сообщения»');
 
   await ctx2.close();
 });
@@ -482,7 +492,7 @@ await step('настройки: пароль и язык интерфейса', 
   await page.goto(`${base}/settings`, { waitUntil: 'networkidle' });
   await page.waitForSelector('form');
 
-  const passwordCard = page.locator('.card', { hasText: 'Пароль' });
+  const passwordCard = page.locator('.password-card');
   const currentField = passwordCard.getByLabel('Текущий пароль');
   if (await currentField.count()) {
     // Пароль уже был задан в предыдущем прогоне этого же сценария на той же базе.
@@ -496,19 +506,28 @@ await step('настройки: пароль и язык интерфейса', 
   if (!pwToast.includes('сохранён')) throw new Error(`пароль не сохранился: ${pwToast}`);
   await shot('28-settings-password');
 
-  const languageCard = page.locator('.card', { hasText: 'Язык интерфейса' });
+  // Переключение языка перезагружает страницу целиком (самый надёжный способ
+  // применить новую локаль везде), поэтому ждём навигацию, а не тост.
+  const languageCard = page.locator('.language-card');
   const beforeLang = await languageCard.innerText();
-  await languageCard.locator('button').click();
-  await page.waitForSelector('.toast');
-  const afterLang = await languageCard.innerText();
+  await Promise.all([page.waitForLoadState('networkidle'), languageCard.locator('button').click()]);
+  await page.waitForSelector('.language-card');
+  const afterLang = await page.locator('.language-card').innerText();
   if (beforeLang === afterLang) throw new Error('переключение языка не изменило состояние');
 
-  await page.reload({ waitUntil: 'networkidle' });
-  const persisted = await page.locator('.card', { hasText: 'Язык интерфейса' }).innerText();
-  if (persisted !== afterLang) throw new Error('выбор языка не сохранился после перезагрузки');
+  // Заголовок раздела теперь на английском — реальное, а не косметическое переключение.
+  const navTitle = await page.locator('.nav-item[href="/settings"]').getAttribute('title');
+  if (navTitle !== 'Settings') throw new Error(`навигация не переключилась на английский: ${navTitle}`);
+  const headerTitle = await page.locator('.main-header h1').innerText();
+  if (headerTitle !== 'Settings') throw new Error(`заголовок раздела не переключился на английский: ${headerTitle}`);
+  await shot('29-settings-english');
+
   // Возвращаем язык обратно, чтобы не влиять на последующие шаги.
-  await page.locator('.card', { hasText: 'Язык интерфейса' }).locator('button').click();
-  await page.waitForSelector('.toast');
+  await Promise.all([
+    page.waitForLoadState('networkidle'),
+    page.locator('.language-card').locator('button').click(),
+  ]);
+  await page.waitForSelector('.language-card');
 });
 
 await step('статические страницы и Ctrl+K', async () => {

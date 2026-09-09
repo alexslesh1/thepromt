@@ -1,18 +1,20 @@
 /**
- * Раздел Eduardo — ИИ-инструмент: вопрос-ответ/тесты, генерация кода,
- * генерация изображений. Лимиты считаются помесячно и зависят от Pro.
+ * Раздел Eduardo — чат с ИИ-помощником и генерация изображений.
+ * Лимиты считаются помесячно и зависят от Pro.
  */
 import express from 'express';
 import { config } from '../config.js';
 import { all, get, run } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { generateImage, generateText } from '../eduardo.js';
+import { generateChatReply, generateImage } from '../eduardo.js';
 import { isProActive } from '../store.js';
-import { HttpError, badRequest, createRateLimiter, limitReached, text, wrap } from '../util.js';
+import { HttpError, createRateLimiter, limitReached, text, wrap } from '../util.js';
 
 export const router = express.Router();
 
-const TOOLS = ['qa', 'test', 'code'];
+// Сколько последних сообщений отправляем модели как контекст диалога —
+// достаточно для связного чата и не разгоняет счёт по токенам бесконечно.
+const CONTEXT_MESSAGES = 20;
 
 // Помесячная квота — это лимит расходов, а этот лимитер — защита от того,
 // чтобы один пользователь не заваливал сервер и внешний AI API запросами
@@ -80,63 +82,80 @@ router.get('/usage', requireAuth, (req, res) => {
   res.json(usagePayload(req.user));
 });
 
-/** GET /api/eduardo/history — последние генерации пользователя. */
-router.get('/history', requireAuth, (req, res) => {
+function shapeMessage(row) {
+  return {
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    simulated: !!row.simulated,
+    createdAt: row.created_at,
+  };
+}
+
+/** GET /api/eduardo/chat — история переписки с Eduardo. */
+router.get('/chat', requireAuth, (req, res) => {
   const rows = all(
-    `SELECT id, tool, prompt, result, image_url, simulated, created_at
-     FROM eduardo_history WHERE user_id = $userId ORDER BY id DESC LIMIT 30`,
+    `SELECT id, role, content, simulated, created_at FROM eduardo_messages
+     WHERE user_id = $userId ORDER BY id ASC LIMIT 200`,
     { userId: req.user.id },
   );
-  res.json({
-    items: rows.map((r) => ({
-      id: r.id,
-      tool: r.tool,
-      prompt: r.prompt,
-      result: r.result,
-      imageUrl: r.image_url,
-      simulated: !!r.simulated,
-      createdAt: r.created_at,
-    })),
-  });
+  res.json({ items: rows.map(shapeMessage) });
 });
 
-/** POST /api/eduardo/text — вопрос-ответ, тест или код. */
+/** POST /api/eduardo/chat — отправить сообщение в чат с Eduardo. */
 router.post(
-  '/text',
+  '/chat',
   requireAuth,
   wrap(async (req, res) => {
-    const check = burstLimiter(`text:${req.user.id}`);
+    const check = burstLimiter(`chat:${req.user.id}`);
     if (!check.ok) {
       res.set('Retry-After', String(check.retryAfter));
       throw new HttpError(429, `Слишком много запросов. Попробуйте через ${check.retryAfter} сек.`, 'rate_limited');
     }
-    const tool = String(req.body?.tool ?? 'qa');
-    if (!TOOLS.includes(tool)) throw badRequest('Неизвестный инструмент');
-    const prompt = text(req.body?.prompt, { max: 4000, min: 3, field: 'Запрос', required: true });
+    const message = text(req.body?.message, { max: 4000, min: 1, field: 'Сообщение', required: true });
 
     const period = currentPeriod();
     const { textLimit } = limitsFor(req.user);
     if (!tryReserveUsage(req.user.id, period, 'text_used', textLimit)) {
       throw limitReached(
-        `Лимит текстовых запросов Eduardo исчерпан (${textLimit} в месяц). Оформите Pro, чтобы получить больше.`,
+        `Лимит сообщений Eduardo исчерпан (${textLimit} в месяц). Оформите Pro, чтобы получить больше.`,
       );
     }
 
+    const inserted = run('INSERT INTO eduardo_messages (user_id, role, content) VALUES ($userId, \'user\', $content)', {
+      userId: req.user.id,
+      content: message,
+    });
+
+    const history = all(
+      `SELECT role, content FROM eduardo_messages WHERE user_id = $userId ORDER BY id DESC LIMIT $limit`,
+      { userId: req.user.id, limit: CONTEXT_MESSAGES },
+    ).reverse();
+
     let result;
     try {
-      result = await generateText({ tool, prompt });
+      result = await generateChatReply({ messages: history });
     } catch (err) {
       releaseUsage(req.user.id, period, 'text_used');
+      run('DELETE FROM eduardo_messages WHERE id = $id', { id: inserted.lastInsertRowid });
       throw err;
     }
-    run(
-      `INSERT INTO eduardo_history (user_id, tool, prompt, result, simulated) VALUES ($userId, $tool, $prompt, $result, $simulated)`,
-      { userId: req.user.id, tool, prompt, result: result.text, simulated: result.simulated ? 1 : 0 },
-    );
 
-    res.json({ result: result.text, simulated: result.simulated, usage: usagePayload(req.user) });
+    const assistantInsert = run(
+      `INSERT INTO eduardo_messages (user_id, role, content, simulated) VALUES ($userId, 'assistant', $content, $simulated)`,
+      { userId: req.user.id, content: result.text, simulated: result.simulated ? 1 : 0 },
+    );
+    const assistantRow = get('SELECT * FROM eduardo_messages WHERE id = $id', { id: assistantInsert.lastInsertRowid });
+
+    res.json({ message: shapeMessage(assistantRow), usage: usagePayload(req.user) });
   }),
 );
+
+/** DELETE /api/eduardo/chat — очистить историю переписки. */
+router.delete('/chat', requireAuth, (req, res) => {
+  run('DELETE FROM eduardo_messages WHERE user_id = $userId', { userId: req.user.id });
+  res.status(204).end();
+});
 
 /** POST /api/eduardo/image — генерация изображения. */
 router.post(

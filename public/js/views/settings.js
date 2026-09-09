@@ -3,8 +3,9 @@
 import { api } from '../api.js';
 import { applyTheme, setUser, state } from '../state.js';
 import { navigate } from '../router.js';
-import { avatar, charCounter, confirmDialog, emptyState, h, spinner, toast } from '../dom.js';
-import { customModelIcon, icon } from '../icons.js';
+import { avatar, charCounter, confirmDialog, h, toast } from '../dom.js';
+import { icon } from '../icons.js';
+import { t } from '../i18n.js';
 import { openAuth } from '../components/auth.js';
 import { openImageCropper } from '../components/imageCropper.js';
 import { openProModal } from '../components/pro.js';
@@ -60,7 +61,7 @@ export async function settingsView() {
   const main = shell();
   main.replaceChildren();
   mountMobileTop(main);
-  main.append(header({ title: 'Настройки', subtitle: 'Профиль, оформление и аккаунт', back: true }));
+  main.append(header({ title: t('header.settings.title'), subtitle: t('header.settings.subtitle'), back: true }));
 
   if (!state.user) {
     main.append(
@@ -73,7 +74,7 @@ export async function settingsView() {
         h('button', {
           class: 'btn',
           style: { marginTop: '14px' },
-          text: 'Войти',
+          text: t('nav.login'),
           onClick: async () => {
             if (await openAuth()) settingsView();
           },
@@ -115,7 +116,7 @@ export async function settingsView() {
     const save = h('button', {
       class: 'btn',
       type: 'submit',
-      text: 'Сохранить изменения',
+      text: t('settings.save'),
     });
 
     const form = h(
@@ -144,7 +145,7 @@ export async function settingsView() {
           }
         },
       },
-      h('h3', { class: 'section-title', style: { marginTop: 0 }, text: 'Профиль' }),
+      h('h3', { class: 'section-title', style: { marginTop: 0 }, text: t('settings.section.profile') }),
       imagePicker({
         label: 'Аватар',
         value: draft.avatarUrl,
@@ -200,91 +201,10 @@ export async function settingsView() {
       ),
     );
 
-    const modelsSlot = h('div', {}, spinner('Загружаем модели…'));
-    const modelsRow = h(
-      'div',
-      { class: 'card', style: { marginTop: '18px' } },
-      h('h3', { text: 'Мои модели' }),
-      h('p', { class: 'hint', text: 'Свои AI-модели, которые видно у вас в профиле — необязательно из общего каталога.' }),
-      modelsSlot,
-    );
-
-    function renderModelsList(items) {
-      const rows = items.map((model) =>
-        h(
-          'div',
-          { class: 'card-row' },
-          customModelIcon(model, 22),
-          h('span', { class: 'grow', text: model.name }),
-          h(
-            'button',
-            {
-              class: 'btn ghost small',
-              type: 'button',
-              title: 'Удалить модель',
-              onClick: async () => {
-                try {
-                  await api.deleteModel(model.id);
-                  toast('Модель удалена');
-                  loadModels();
-                } catch (error) {
-                  toast(error.message, 'error');
-                }
-              },
-            },
-            icon('trash', { size: 14 }),
-          ),
-        ),
-      );
-
-      const nameInput = h('input', { class: 'input', placeholder: 'Название модели', maxlength: 60 });
-      const iconInput = h('input', { class: 'input', placeholder: 'Ссылка на иконку (необязательно)', maxlength: 300 });
-      const addForm = h(
-        'form',
-        {
-          class: 'row',
-          style: { marginTop: '12px', gap: '8px', flexWrap: 'wrap' },
-          onSubmit: async (event) => {
-            event.preventDefault();
-            const name = nameInput.value.trim();
-            if (!name) return;
-            try {
-              await api.addModel({ name, iconUrl: iconInput.value.trim() || undefined });
-              nameInput.value = '';
-              iconInput.value = '';
-              toast('Модель добавлена');
-              loadModels();
-            } catch (error) {
-              toast(error.message, 'error');
-            }
-          },
-        },
-        h('div', { class: 'grow', style: { minWidth: '160px' } }, nameInput),
-        h('div', { class: 'grow', style: { minWidth: '200px' } }, iconInput),
-        h('button', { class: 'btn small', type: 'submit', text: 'Добавить' }),
-      );
-
-      modelsSlot.replaceChildren(
-        ...rows,
-        ...(items.length ? [] : [h('p', { class: 'hint', text: 'Пока нет своих моделей — добавьте ниже.' })]),
-        addForm,
-      );
-    }
-
-    async function loadModels() {
-      try {
-        const { mine } = await api.models();
-        renderModelsList(mine);
-      } catch (error) {
-        modelsSlot.replaceChildren(emptyState('warn', 'Не удалось загрузить модели', error.message));
-      }
-    }
-    loadModels();
-
     const themeRow = h(
       'div',
       { class: 'card', style: { marginTop: '18px' } },
-      h('h3', { text: 'Оформление' }),
+      h('h3', { text: t('settings.section.appearance') }),
       h(
         'div',
         { class: 'theme-switch' },
@@ -311,8 +231,8 @@ export async function settingsView() {
 
     const languageRow = h(
       'div',
-      { class: 'card', style: { marginTop: '18px' } },
-      h('h3', { text: 'Язык интерфейса' }),
+      { class: 'card language-card', style: { marginTop: '18px' } },
+      h('h3', { text: t('settings.section.language') }),
       h(
         'div',
         { class: 'theme-switch' },
@@ -328,10 +248,11 @@ export async function settingsView() {
             onClick: async () => {
               const next = state.user.locale === 'en' ? 'ru' : 'en';
               try {
-                const result = await api.updateMe({ locale: next });
-                setUser(result.user);
-                toast(next === 'en' ? 'Language switched to English' : 'Язык переключён на русский');
-                renderForm();
+                await api.updateMe({ locale: next });
+                // Полная перезагрузка — самый надёжный способ применить новый
+                // язык сразу везде: и в каркасе приложения, и в открытом
+                // экране, без отдельного реактивного i18n для каждого узла.
+                location.reload();
               } catch (error) {
                 toast(error.message, 'error');
               }
@@ -394,8 +315,8 @@ export async function settingsView() {
 
     const passwordRow = h(
       'div',
-      { class: 'card', style: { marginTop: '18px' } },
-      h('h3', { text: 'Пароль' }),
+      { class: 'card password-card', style: { marginTop: '18px' } },
+      h('h3', { text: t('settings.section.password') }),
       h('p', {
         class: 'hint',
         text: state.user.hasPassword
@@ -408,7 +329,7 @@ export async function settingsView() {
     const accountRow = h(
       'div',
       { class: 'card' },
-      h('h3', { text: 'Аккаунт' }),
+      h('h3', { text: t('settings.section.account') }),
       h('div', { class: 'card-row' }, h('span', { class: 'grow muted', text: 'Почта' }), h('span', { class: 'strong', text: state.user.email })),
       h(
         'div',
@@ -422,7 +343,7 @@ export async function settingsView() {
         h('button', {
           class: 'btn ghost',
           type: 'button',
-          text: 'Выйти',
+          text: t('settings.logout'),
           onClick: async () => {
             await api.logout();
             setUser(null);
@@ -433,7 +354,7 @@ export async function settingsView() {
         h('button', {
           class: 'btn ghost',
           type: 'button',
-          text: 'Выйти на всех устройствах',
+          text: t('settings.logoutAll'),
           onClick: async () => {
             await api.logoutAll();
             setUser(null);
@@ -448,7 +369,7 @@ export async function settingsView() {
             class: 'btn danger',
             type: 'button',
             style: { marginTop: '12px' },
-            text: 'Удалить аккаунт',
+            text: t('settings.deleteAccount'),
             onClick: async () => {
               const ok = await confirmDialog({
                 title: 'Удалить аккаунт?',
@@ -465,7 +386,7 @@ export async function settingsView() {
           }),
     );
 
-    container.replaceChildren(form, proRow, modelsRow, themeRow, languageRow, passwordRow, accountRow);
+    container.replaceChildren(form, proRow, themeRow, languageRow, passwordRow, accountRow);
   };
 
   renderForm();

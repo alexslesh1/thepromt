@@ -5,32 +5,34 @@ import { currentPath, navigate } from '../router.js';
 import { isAdmin, setUser, state, subscribe, applyTheme } from '../state.js';
 import { avatar, frag, h, modal, toast } from '../dom.js';
 import { adminBadge, icon, modelTile, proBadge } from '../icons.js';
+import { t } from '../i18n.js';
 import { openAuth } from './auth.js';
 import { openComposer } from './composer.js';
 import { openProModal } from './pro.js';
 
 /* ------------------------------ Навигация ------------------------------ */
 
-const NAV = [
-  { href: '/', icon: 'home', label: 'Главная' },
-  { href: '/explore', icon: 'search', label: 'Обзор' },
-  { href: '/notifications', icon: 'bell', label: 'Уведомления', auth: true, badge: 'unread' },
-  { href: '/messages', icon: 'message', label: 'Сообщения', auth: true, badge: 'unreadMessages' },
-  { href: '/dm', icon: 'feather', label: 'Личные сообщения', auth: true, badge: 'unreadDms' },
-  { href: '/admin', icon: 'shieldCheck', label: 'Админка', admin: true, badge: 'openReports' },
-];
+function navConfig() {
+  return [
+    { href: '/', icon: 'home', label: t('nav.home') },
+    { href: '/explore', icon: 'search', label: t('nav.explore') },
+    { href: '/notifications', icon: 'bell', label: t('nav.notifications'), auth: true, badge: 'notificationsTotal' },
+    { href: '/dm', icon: 'message', label: t('nav.messages'), auth: true, badge: 'unreadDms' },
+    { href: '/admin', icon: 'shieldCheck', label: t('nav.admin'), admin: true, badge: 'openReports' },
+  ];
+}
 
 function navItems() {
   const items = [];
-  for (const item of NAV) {
+  for (const item of navConfig()) {
     if (item.auth && !state.user) continue;
     if (item.admin && !isAdmin()) continue;
     items.push(item);
   }
   if (state.user?.username) {
-    items.push({ href: `/u/${state.user.username}`, icon: 'user', label: 'Профиль' });
+    items.push({ href: `/u/${state.user.username}`, icon: 'user', label: t('nav.profile') });
   }
-  items.push({ href: '/settings', icon: 'gear', label: 'Настройки' });
+  items.push({ href: '/settings', icon: 'gear', label: t('nav.settings') });
   return items;
 }
 
@@ -39,10 +41,11 @@ function isActive(href) {
   return href === '/' ? path === '/' : path.startsWith(href);
 }
 
-const BADGE_KEYS = { unread: 'unread', unreadMessages: 'unreadMessages', unreadDms: 'unreadDms', openReports: 'openReports' };
-
 function badgeValue(key) {
-  const value = state[BADGE_KEYS[key]] ?? 0;
+  // «Уведомления» теперь показывают и обычную активность, и модерацию —
+  // раньше это были два разных пункта меню («Уведомления» и «Сообщения»).
+  const value =
+    key === 'notificationsTotal' ? state.unread + state.unreadMessages : (state[key] ?? 0);
   return value > 0 ? (value > 99 ? '99+' : String(value)) : null;
 }
 
@@ -54,7 +57,7 @@ function brand() {
       'span',
       { class: 'brand-text' },
       h('span', { class: 'brand-name', text: 'ThePrompt' }),
-      h('span', { class: 'brand-slogan', text: 'Делись идеями. Создавай больше.' }),
+      h('span', { class: 'brand-slogan', text: t('brand.slogan') }),
     ),
   );
 }
@@ -91,9 +94,9 @@ function leftColumn() {
     nav,
     h(
       'button',
-      { class: 'compose-cta', title: 'Опубликовать промпт', onClick: composeAction },
+      { class: 'compose-cta', title: t('compose.button'), onClick: composeAction },
       icon('plus', { size: 18 }),
-      h('span', { class: 'label', text: 'Опубликовать промпт' }),
+      h('span', { class: 'label', text: t('compose.button') }),
     ),
     assistantCard(),
     proCard(),
@@ -120,7 +123,7 @@ function leftColumn() {
         'button',
         { class: 'btn ghost block', style: { marginTop: 'auto' }, onClick: () => openAuth() },
         icon('user', { size: 16 }),
-        h('span', { class: 'label', text: 'Войти' }),
+        h('span', { class: 'label', text: t('nav.login') }),
       ),
     );
   }
@@ -132,13 +135,13 @@ function leftColumn() {
 function assistantCard() {
   return h(
     'a',
-    { class: 'side-card ai', href: '/eduardo', title: 'Eduardo — ИИ-инструмент' },
+    { class: 'side-card ai', href: '/eduardo', title: t('eduardo.cardTitle') },
     h('span', { class: 'tile' }, icon('sparkles', { size: 19 })),
     h(
       'span',
       { class: 'grow' },
-      h('span', { class: 't' }, 'Eduardo', h('span', { class: 'tag', text: 'AI' })),
-      h('span', { class: 's', text: 'Ваш AI-помощник' }),
+      h('span', { class: 't' }, t('eduardo.cardTitle'), h('span', { class: 'tag', text: 'AI' })),
+      h('span', { class: 's', text: t('eduardo.cardSubtitle') }),
     ),
     icon('chevronRight', { size: 16, class: 'chev' }),
   );
@@ -153,8 +156,8 @@ function proCard() {
     h(
       'span',
       { class: 'grow' },
-      h('span', { class: 't' }, active ? 'Pro активен' : 'Перейти на Pro', active ? proBadge(14) : null),
-      h('span', { class: 's', text: active ? 'Управление подпиской' : 'Больше возможностей для твоих идей' }),
+      h('span', { class: 't' }, active ? t('pro.cardActive') : t('pro.cardInactive'), active ? proBadge(14) : null),
+      h('span', { class: 's', text: active ? t('pro.cardManage') : t('pro.cardPitch') }),
     ),
     icon('chevronRight', { size: 16, class: 'chev' }),
   );
@@ -170,7 +173,7 @@ async function openAccountMenu() {
         { class: 'radio-list' },
         h('button', {
           class: 'btn subtle',
-          text: 'Мой профиль',
+          text: t('account.myProfile'),
           onClick: () => {
             close();
             navigate(`/u/${state.user.username}`);
@@ -178,7 +181,7 @@ async function openAccountMenu() {
         }),
         h('button', {
           class: 'btn subtle',
-          text: 'Сохранённые промпты',
+          text: t('account.bookmarks'),
           onClick: () => {
             close();
             navigate(`/u/${state.user.username}?tab=bookmarks`);
@@ -186,7 +189,7 @@ async function openAccountMenu() {
         }),
         h('button', {
           class: 'btn subtle',
-          text: 'Настройки',
+          text: t('account.settings'),
           onClick: () => {
             close();
             navigate('/settings');
@@ -194,7 +197,7 @@ async function openAccountMenu() {
         }),
         h('button', {
           class: 'btn ghost',
-          text: 'Выйти',
+          text: t('account.logout'),
           onClick: async () => {
             close();
             await api.logout();
@@ -215,7 +218,7 @@ let searchInputRef = null;
 function searchBox() {
   const input = h('input', {
     type: 'search',
-    placeholder: 'Поиск промптов, моделей, тегов…',
+    placeholder: t('search.placeholder'),
     'aria-label': 'Поиск',
     value: new URLSearchParams(location.search).get('q') ?? '',
     onKeydown: (event) => {
@@ -260,10 +263,10 @@ function themeCard() {
       h(
         'span',
         { class: 'grow' },
-        h('span', { class: 't', text: dark ? 'Тёмная тема' : 'Светлая тема' }),
-        h('span', { class: 's', text: dark ? 'Комфортно для ваших идей' : 'Светлый режим включён' }),
+        h('span', { class: 't', text: dark ? t('theme.dark') : t('theme.light') }),
+        h('span', { class: 's', text: dark ? t('theme.darkHint') : t('theme.lightHint') }),
       ),
-      h('span', { class: 'theme-toggle' }, button('light', 'sun', 'Светлая тема'), button('dark', 'moon', 'Тёмная тема')),
+      h('span', { class: 'theme-toggle' }, button('light', 'sun', t('theme.light')), button('dark', 'moon', t('theme.dark'))),
     ),
   );
 }
@@ -290,9 +293,9 @@ const modelInfo = (id) => state.meta?.models.find((m) => m.id === id) ?? { id, l
 async function rightColumn() {
   const column = h('aside', { class: 'col-right' });
 
-  const tagsCard = h('div', { class: 'card' }, cardHead('Популярные теги'), h('div', { class: 'muted-text', text: 'Загрузка…' }));
-  const modelsCard = h('div', { class: 'card' }, cardHead('Популярные модели'), h('div', { class: 'muted-text', text: 'Загрузка…' }));
-  const peopleCard = h('div', { class: 'card' }, cardHead('Кого читать'), h('div', { class: 'muted-text', text: 'Загрузка…' }));
+  const tagsCard = h('div', { class: 'card' }, cardHead(t('sidebar.trendingTags')), h('div', { class: 'muted-text', text: 'Загрузка…' }));
+  const modelsCard = h('div', { class: 'card' }, cardHead(t('sidebar.trendingModels')), h('div', { class: 'muted-text', text: 'Загрузка…' }));
+  const peopleCard = h('div', { class: 'card' }, cardHead(t('sidebar.whoToFollow')), h('div', { class: 'muted-text', text: 'Загрузка…' }));
 
   column.append(searchBox(), themeCard(), tagsCard, modelsCard, peopleCard, promoCard(), sideFooter());
 
@@ -300,7 +303,7 @@ async function rightColumn() {
     const data = await api.sidebar();
 
     tagsCard.replaceChildren(
-      cardHead('Популярные теги', 'Показать все', () => navigate('/explore')),
+      cardHead(t('sidebar.trendingTags'), t('sidebar.showAll'), () => navigate('/explore')),
       data.trendingTags.length
         ? h(
             'div',
@@ -313,7 +316,7 @@ async function rightColumn() {
     );
 
     modelsCard.replaceChildren(
-      cardHead('Популярные модели', 'Показать все', () => navigate('/explore')),
+      cardHead(t('sidebar.trendingModels'), t('sidebar.showAll'), () => navigate('/explore')),
       ...(data.topModels.length
         ? data.topModels.map((item) => {
             const model = modelInfo(item.id);
@@ -334,13 +337,13 @@ async function rightColumn() {
     );
 
     peopleCard.replaceChildren(
-      cardHead('Кого читать', 'Показать все', () => navigate('/explore')),
+      cardHead(t('sidebar.whoToFollow'), t('sidebar.showAll'), () => navigate('/explore')),
       ...(data.suggestedUsers.length
         ? data.suggestedUsers.map((user) => personRow(user))
         : [h('div', { class: 'muted-text', text: 'Пока некого предложить.' })]),
     );
   } catch {
-    tagsCard.replaceChildren(cardHead('Популярные теги'), h('div', { class: 'muted-text', text: 'Не удалось загрузить' }));
+    tagsCard.replaceChildren(cardHead(t('sidebar.trendingTags')), h('div', { class: 'muted-text', text: 'Не удалось загрузить' }));
   }
 
   return column;
@@ -350,7 +353,7 @@ async function rightColumn() {
 function personRow(user) {
   const button = h('button', {
     class: user.isFollowing ? 'btn ghost small' : 'btn small',
-    text: user.isFollowing ? 'Вы подписаны' : 'Подписаться',
+    text: user.isFollowing ? t('follow.following') : t('follow.follow'),
     onClick: async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -359,7 +362,7 @@ function personRow(user) {
       try {
         const result = await api.follow(user.username);
         button.className = result.user.isFollowing ? 'btn ghost small' : 'btn small';
-        button.textContent = result.user.isFollowing ? 'Вы подписаны' : 'Подписаться';
+        button.textContent = result.user.isFollowing ? t('follow.following') : t('follow.follow');
       } catch (error) {
         toast(error.message, 'error');
       } finally {
@@ -430,13 +433,13 @@ function sideFooter() {
   return h(
     'div',
     { class: 'side-footer' },
-    link('/about', 'О проекте'),
+    link('/about', t('footer.about')),
     h('span', { class: 'sep', text: '·' }),
-    link('/rules', 'Правила'),
+    link('/rules', t('footer.rules')),
     h('span', { class: 'sep', text: '·' }),
-    link('/privacy', 'Конфиденциальность'),
+    link('/privacy', t('footer.privacy')),
     h('span', { class: 'sep', text: '·' }),
-    link('/terms', 'Условия'),
+    link('/terms', t('footer.terms')),
     h('div', { text: `© ${new Date().getFullYear()} ThePrompt. Сделан для AI-креаторов.` }),
   );
 }
@@ -458,7 +461,7 @@ function mobileTop() {
       },
       icon(state.theme === 'dark' ? 'sun' : 'moon', { size: 19 }),
     ),
-    state.user ? null : h('button', { class: 'btn small', text: 'Войти', onClick: () => openAuth() }),
+    state.user ? null : h('button', { class: 'btn small', text: t('nav.login'), onClick: () => openAuth() }),
   );
 }
 
@@ -467,9 +470,8 @@ function mobileBar() {
     { href: '/', icon: 'home' },
     { href: '/explore', icon: 'search' },
     { href: '/eduardo', icon: 'sparkles', auth: true },
-    { href: '/notifications', icon: 'bell', badge: 'unread', auth: true },
-    { href: '/messages', icon: 'message', badge: 'unreadMessages', auth: true },
-    { href: '/dm', icon: 'feather', badge: 'unreadDms', auth: true },
+    { href: '/notifications', icon: 'bell', badge: 'notificationsTotal', auth: true },
+    { href: '/dm', icon: 'message', badge: 'unreadDms', auth: true },
     ...(isAdmin() ? [{ href: '/admin', icon: 'shieldCheck', badge: 'openReports' }] : []),
     state.user?.username ? { href: `/u/${state.user.username}`, icon: 'user' } : { href: '/settings', icon: 'gear' },
   ].filter((item) => !item.auth || state.user);

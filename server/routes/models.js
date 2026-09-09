@@ -1,10 +1,11 @@
 /**
- * Пользовательские и общие AI-модели (сущность Model).
- *
- * owner_id = NULL — модель в общем каталоге, её видят все и меняют только
- * администраторы. owner_id = id пользователя — личная модель в его профиле,
- * которую он сам добавил, редактирует и удаляет (админ может модерировать
- * чужую тоже).
+ * AI-модели (сущность Model) — общий каталог, который ведут только
+ * администраторы. Раньше пользователи могли добавлять и свои личные модели
+ * (owner_id = id пользователя), но эту возможность убрали — теперь модели
+ * может создавать только администратор, и все они общие (owner_id = NULL).
+ * Историческую поддержку "своих" моделей в PATCH/DELETE оставили — если в
+ * базе остались записи с owner_id от прошлой версии, их владелец всё ещё
+ * может их переименовать/удалить сам.
  */
 import express from 'express';
 import { all, get, run } from '../db.js';
@@ -55,31 +56,20 @@ router.get(
   }),
 );
 
-/** POST /api/models — добавить модель. Админ может сделать её общей (global: true). */
+/** POST /api/models — добавить модель в общий каталог. Только для администратора. */
 router.post(
   '/',
   requireAuth,
   wrap(async (req, res) => {
+    if (req.user.role !== 'admin') {
+      throw forbidden('Добавлять модели может только администратор');
+    }
     const name = text(req.body?.name, { max: LIMITS.modelName, min: 2, field: 'Название', required: true });
     const iconUrl = readIconUrl(req.body?.iconUrl) ?? null;
-    const wantsGlobal = !!req.body?.global;
-    if (wantsGlobal && req.user.role !== 'admin') {
-      throw forbidden('Добавлять модели в общий каталог может только администратор');
-    }
 
-    if (!wantsGlobal) {
-      const { count } = get('SELECT COUNT(*) AS count FROM models WHERE owner_id = $userId', {
-        userId: req.user.id,
-      });
-      if (count >= LIMITS.ownModelsPerUser) {
-        throw badRequest(`Можно добавить не больше ${LIMITS.ownModelsPerUser} своих моделей`);
-      }
-    }
-
-    const result = run('INSERT INTO models (name, icon_url, owner_id) VALUES ($name, $iconUrl, $ownerId)', {
+    const result = run('INSERT INTO models (name, icon_url, owner_id) VALUES ($name, $iconUrl, NULL)', {
       name,
       iconUrl,
-      ownerId: wantsGlobal ? null : req.user.id,
     });
     const row = get('SELECT * FROM models WHERE id = $id', { id: result.lastInsertRowid });
     res.status(201).json({ model: shapeModel(row) });

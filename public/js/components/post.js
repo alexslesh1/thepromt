@@ -17,8 +17,10 @@ import {
   toast,
 } from '../dom.js';
 import { icon, modelTile, proBadge } from '../icons.js';
+import { t } from '../i18n.js';
 import { requireAuth } from './auth.js';
 import { openComposer } from './composer.js';
+import { sendPromptToEduardo } from '../views/eduardo.js';
 
 export const modelInfo = (id) =>
   state.meta?.models.find((m) => m.id === id) ?? { id, label: id, short: id, color: '#8a8a8a', glyph: 'circle' };
@@ -411,7 +413,7 @@ export function postCard(post, options = {}) {
   const likeCount = h('span', { text: formatCount(post.counts.likes) });
   const likeBtn = h(
     'button',
-    { class: `action like${post.viewer.liked ? ' on' : ''}`, title: 'Нравится' },
+    { class: `action like${post.viewer.liked ? ' on' : ''}`, title: t('action.like') },
     icon('heart', { size: 17, filled: post.viewer.liked }),
     likeCount,
   );
@@ -432,7 +434,7 @@ export function postCard(post, options = {}) {
   const commentCount = h('span', { text: formatCount(post.counts.comments) });
   const commentBtn = h(
     'button',
-    { class: 'action comment-btn', title: 'Комментарии' },
+    { class: 'action comment-btn', title: t('action.comment') },
     icon('comment', { size: 17 }),
     commentCount,
   );
@@ -444,7 +446,7 @@ export function postCard(post, options = {}) {
   const repostCount = h('span', { text: formatCount(post.counts.reposts) });
   const repostBtn = h(
     'button',
-    { class: `action repost${post.viewer.reposted ? ' on' : ''}`, title: 'Репост' },
+    { class: `action repost${post.viewer.reposted ? ' on' : ''}`, title: t('action.repost') },
     icon('repost', { size: 17 }),
     repostCount,
   );
@@ -469,7 +471,7 @@ export function postCard(post, options = {}) {
   const saveCount = h('span', { text: formatCount(post.counts.bookmarks) });
   const saveBtn = h(
     'button',
-    { class: `action save${post.viewer.bookmarked ? ' on' : ''}`, title: 'Сохранить' },
+    { class: `action save${post.viewer.bookmarked ? ' on' : ''}`, title: t('action.save') },
     icon('bookmark', { size: 17, filled: post.viewer.bookmarked }),
     saveCount,
   );
@@ -492,13 +494,24 @@ export function postCard(post, options = {}) {
     }),
   );
 
+  const eduardoBtn = h(
+    'button',
+    { class: 'action eduardo-try', title: t('action.tryEduardo') },
+    icon('sparkles', { size: 17 }),
+  );
+  eduardoBtn.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (!(await requireAuth('Войдите, чтобы пообщаться с Eduardo'))) return;
+    sendPromptToEduardo(post.promptText);
+  });
+
   const mine = state.user && post.author.id === state.user.id;
   const lastBtn = mine
     ? h(
         'button',
         {
           class: 'action delete',
-          title: 'Удалить',
+          title: t('action.delete'),
           onClick: (event) => {
             event.stopPropagation();
             deletePost(post, card);
@@ -510,7 +523,7 @@ export function postCard(post, options = {}) {
         'button',
         {
           class: 'action report',
-          title: 'Пожаловаться',
+          title: t('action.report'),
           onClick: (event) => {
             event.stopPropagation();
             openReport(post);
@@ -520,7 +533,17 @@ export function postCard(post, options = {}) {
       );
 
   card.append(
-    h('div', { class: 'actions' }, likeBtn, commentBtn, repostBtn, saveBtn, h('span', { class: 'spacer' }), lastBtn),
+    h(
+      'div',
+      { class: 'actions' },
+      likeBtn,
+      commentBtn,
+      repostBtn,
+      saveBtn,
+      eduardoBtn,
+      h('span', { class: 'spacer' }),
+      lastBtn,
+    ),
   );
 
   return card;

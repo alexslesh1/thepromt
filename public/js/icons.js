@@ -62,12 +62,7 @@ const GLYPHS = {
   whale: 'M3 13c4 5 14 5 18 0-2-6-6-8-9-8s-7 2-9 8zM8 11h.01',
 };
 
-/**
- * Возвращает SVG-иконку.
- * @param {keyof PATHS} name
- * @param {{size?: number, filled?: boolean, class?: string}} options
- */
-export function icon(name, { size = 18, filled = false, class: className = '' } = {}) {
+function buildSvgIcon(name, { size, filled, className }) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('width', size);
@@ -86,6 +81,34 @@ export function icon(name, { size = 18, filled = false, class: className = '' } 
   path.setAttribute('d', PATHS[name] ?? GLYPHS[name] ?? PATHS.more);
   svg.append(path);
   return svg;
+}
+
+/**
+ * Иконки, для которых вместо встроенного SVG используется картинка заказчика
+ * (Pro-подписка, модерация/админка). Если картинка не загрузится — честный
+ * откат на прежний нарисованный глиф, интерфейс не ломается.
+ */
+const CUSTOM_ICON_URLS = {
+  crown: 'https://cdn-icons-png.flaticon.com/128/1828/1828640.png',
+  shieldCheck: 'https://cdn-icons-png.flaticon.com/128/1831/1831356.png',
+};
+
+/**
+ * Возвращает иконку — картинку (для имён из CUSTOM_ICON_URLS) или SVG.
+ * @param {keyof PATHS} name
+ * @param {{size?: number, filled?: boolean, class?: string}} options
+ */
+export function icon(name, { size = 18, filled = false, class: className = '' } = {}) {
+  const customUrl = CUSTOM_ICON_URLS[name];
+  if (!customUrl) return buildSvgIcon(name, { size, filled, className });
+
+  const img = imgWithFallback(customUrl, {
+    size,
+    alt: '',
+    fallback: () => buildSvgIcon(name, { size, filled, className }),
+  });
+  if (className) img.className = className;
+  return img;
 }
 
 /**

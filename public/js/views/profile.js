@@ -5,6 +5,7 @@ import { isAdmin } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, emptyState, frag, h, modal, plural, pluralWord, promptDialog, spinner, toast } from '../dom.js';
 import { adminBadge, customModelIcon, icon, proBadge } from '../icons.js';
+import { t } from '../i18n.js';
 import { feedList } from '../components/post.js';
 import { requireAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
@@ -141,7 +142,7 @@ export async function profileView({ params, query }) {
     }
 
     const followBtn = current.isMe
-      ? h('button', { class: 'btn ghost', text: 'Редактировать профиль', onClick: () => navigate('/settings') })
+      ? h('button', { class: 'btn ghost', text: t('profile.editProfile'), onClick: () => navigate('/settings') })
       : h(
           'div',
           { style: { display: 'flex', gap: '8px' } },
@@ -152,10 +153,10 @@ export async function profileView({ params, query }) {
               if (!(await requireAuth('Войдите, чтобы писать личные сообщения'))) return;
               navigate(`/dm/${current.username}`);
             },
-          }, icon('feather', { size: 16 })),
+          }, icon('message', { size: 16 })),
           h('button', {
             class: current.isFollowing ? 'btn ghost' : 'btn',
-            text: current.isFollowing ? 'Вы подписаны' : 'Подписаться',
+            text: current.isFollowing ? t('follow.following') : t('follow.follow'),
             onClick: async () => {
               if (!(await requireAuth('Войдите, чтобы подписываться'))) return;
               try {
@@ -260,10 +261,10 @@ export async function profileView({ params, query }) {
     .catch(() => {});
 
   const items = [
-    { id: 'posts', label: 'Промпты и репосты' },
-    { id: 'likes', label: 'Понравилось' },
+    { id: 'posts', label: t('profile.tab.posts') },
+    { id: 'likes', label: t('profile.tab.likes') },
     // Сохранённое приватно: вкладка есть только в собственном профиле.
-    ...(user.isMe ? [{ id: 'bookmarks', label: 'Сохранённое' }] : []),
+    ...(user.isMe ? [{ id: 'bookmarks', label: t('profile.tab.bookmarks') }] : []),
   ];
   const requested = query.get('tab') ?? 'posts';
   const tab = items.some((i) => i.id === requested) ? requested : 'posts';

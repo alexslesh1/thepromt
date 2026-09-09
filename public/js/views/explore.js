@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { navigate } from '../router.js';
 import { avatar, emptyState, h, spinner } from '../dom.js';
 import { icon } from '../icons.js';
+import { t } from '../i18n.js';
 import { feedList } from '../components/post.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
@@ -27,7 +28,7 @@ export async function exploreView({ query }) {
   });
 
   main.append(
-    header({ title: 'Обзор', subtitle: 'Поиск промптов, тегов, моделей и авторов' }),
+    header({ title: t('header.explore.title'), subtitle: t('header.explore.subtitle') }),
     h(
       'div',
       { style: { padding: '14px 16px', borderBottom: '1px solid var(--border)' } },

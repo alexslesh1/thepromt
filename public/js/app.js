@@ -11,7 +11,6 @@ import { postView } from './views/post.js';
 import { profileView } from './views/profile.js';
 import { settingsView } from './views/settings.js';
 import { notificationsView } from './views/notifications.js';
-import { messagesView } from './views/messages.js';
 import { dmListView, dmThreadView } from './views/dm.js';
 import { eduardoView } from './views/eduardo.js';
 import { staticView } from './views/static.js';
@@ -26,7 +25,8 @@ route('/post/:id', postView);
 route('/u/:username', profileView);
 route('/settings', settingsView);
 route('/notifications', notificationsView);
-route('/messages', messagesView);
+// Старый раздел «Сообщения» (внутренние уведомления) объединён с «Уведомления».
+route('/messages', async () => navigate('/notifications?tab=moderation', { replace: true }));
 route('/dm', dmListView);
 route('/dm/:username', dmThreadView);
 route('/eduardo', eduardoView);

@@ -600,9 +600,21 @@ button, input, textarea, select { font: inherit; color: inherit; }
   border-radius: var(--radius-sm); border: 1px solid rgba(242, 176, 30, .35);
   background: rgba(242, 176, 30, .08); color: var(--warning); font-size: 12.5px; line-height: 1.5;
 }
+.dm-bubble .eduardo-sim-note { margin: 6px 0 0; padding: 5px 8px; font-size: 11px; }
 .eduardo-text { color: #d6d9de; }
 [data-theme='light'] .eduardo-text { color: #1f2937; }
 .eduardo-image { display: block; width: 100%; max-width: 420px; border-radius: var(--radius-md); border: 1px solid var(--border); margin-bottom: 12px; }
+
+.eduardo-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; }
+.eduardo-toolbar .field { margin: 0; display: flex; align-items: center; gap: 8px; }
+.eduardo-toolbar .label { white-space: nowrap; }
+.eduardo-toolbar select.select { width: auto; padding: 7px 30px 7px 12px; font-size: 13px; }
+.dm-bubble-actions { display: flex; gap: 6px; margin-top: 6px; }
+.dm-bubble.typing .dm-bubble-text { display: flex; gap: 4px; align-items: center; }
+.eduardo-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .5; animation: eduardo-blink 1.2s infinite ease-in-out; }
+.eduardo-dot:nth-child(2) { animation-delay: .2s; }
+.eduardo-dot:nth-child(3) { animation-delay: .4s; }
+@keyframes eduardo-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: .9; } }
 
 .promo-card {
   position: relative; overflow: hidden; border-radius: var(--radius);
@@ -627,7 +639,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 /* ------------------------------ Профиль -------------------------------- */
 
 .profile-banner { height: 210px; background: var(--gradient); background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: var(--radius) var(--radius) 0 0; }
-.profile-head { padding: 0 20px 18px; background: var(--bg-card); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
+.profile-head { padding: 0 20px 18px; background: var(--bg-card); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); display: flow-root; }
 .profile-top { display: flex; align-items: flex-end; justify-content: space-between; margin-top: -64px; margin-bottom: 14px; gap: 12px; }
 .profile-name { font-size: 22px; font-weight: 750; margin: 0; letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; }
 .profile-handle { color: var(--text-muted); font-size: 14px; }

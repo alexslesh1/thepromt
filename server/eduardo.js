@@ -1,11 +1,13 @@
 /**
- * Движок Eduardo: генерация текста/кода/тестов (через DeepSeek) и изображений.
+ * Движок Eduardo: чат с ИИ-помощником (через DeepSeek, модель «Eduardo-S1»)
+ * и генерация изображений.
  *
- * Если в .env задан DEEPSEEK_API_KEY — текстовые инструменты зовут настоящий
- * DeepSeek API. Если ключа нет, работает в честном демо-режиме: возвращает
- * явно помеченный шаблонный результат вместо того, чтобы притворяться
- * настоящим ответом ИИ. Поле `simulated` в ответе всегда говорит, какой режим
- * сработал — интерфейс показывает это пользователю.
+ * Если в .env задан DEEPSEEK_API_KEY — чат зовёт настоящий DeepSeek API,
+ * передавая ему всю историю переписки как контекст. Если ключа нет, работает
+ * в честном демо-режиме: возвращает явно помеченный шаблонный результат
+ * вместо того, чтобы притворяться настоящим ответом ИИ. Поле `simulated` в
+ * ответе всегда говорит, какой режим сработал — интерфейс показывает это
+ * пользователю.
  *
  * Генерация изображений (generateImage/placeholderSvg) пока не подключена
  * к интерфейсу — вкладка «Изображение» в Eduardo показывает «скоро будет
@@ -17,54 +19,24 @@ import path from 'node:path';
 import { config } from './config.js';
 import { run } from './db.js';
 
-const SYSTEM_PROMPTS = {
-  qa: 'Ты — Eduardo, помощник ThePrompt. Отвечай на вопрос пользователя кратко, точно и по делу, на русском языке.',
-  test: 'Ты — Eduardo, помощник ThePrompt. По теме пользователя составь короткий тест: 3 вопроса с 4 вариантами ответа и правильным ответом в конце. Отвечай на русском языке.',
-  code: 'Ты — Eduardo, помощник ThePrompt по программированию. Напиши рабочий код для задачи пользователя, кратко поясни решение. Если язык программирования не указан явно, выбери наиболее уместный и укажи его.',
-};
+const EDUARDO_SYSTEM_PROMPT =
+  'Ты — Eduardo, ИИ-помощник ThePrompt (модель Eduardo-S1). Помогаешь с промптами для нейросетей, отвечаешь на вопросы, пишешь код, составляешь тесты и объясняешь темы. Отвечай по делу, кратко и точно, на языке пользователя (обычно русский), код оформляй в блоках ```.';
 
-function simulatedText(tool, prompt) {
+function simulatedReply(prompt) {
   const banner = 'Демо-ответ Eduardo (на сервере не настроен DEEPSEEK_API_KEY — это шаблон, а не результат работы нейросети).';
   const trimmedPrompt = prompt.length > 200 ? `${prompt.slice(0, 200)}…` : prompt;
-
-  if (tool === 'test') {
-    return [
-      banner,
-      '',
-      `Тема: «${trimmedPrompt}»`,
-      '',
-      '1. Пример вопроса по теме?',
-      '   A) Вариант A   B) Вариант B   C) Вариант C   D) Вариант D',
-      '2. Ещё один пример вопроса?',
-      '   A) Вариант A   B) Вариант B   C) Вариант C   D) Вариант D',
-      '3. И третий пример вопроса?',
-      '   A) Вариант A   B) Вариант B   C) Вариант C   D) Вариант D',
-      '',
-      'Правильные ответы: 1-A, 2-B, 3-C (демо-заглушка).',
-    ].join('\n');
-  }
-
-  if (tool === 'code') {
-    return [
-      banner,
-      '',
-      '```',
-      `// Задача: ${trimmedPrompt}`,
-      'function solve() {',
-      '  // TODO: здесь будет реализация от настоящей модели',
-      '  throw new Error("Демо-заглушка — подключите DEEPSEEK_API_KEY для настоящей генерации кода");',
-      '}',
-      '```',
-    ].join('\n');
-  }
-
-  return [banner, '', `Ваш вопрос: «${trimmedPrompt}»`, '', 'Настоящий ответ появится здесь после настройки ключа API.'].join('\n');
+  return [banner, '', `Ваше сообщение: «${trimmedPrompt}»`, '', 'Настоящий ответ появится здесь после настройки ключа API.'].join('\n');
 }
 
-/** @param {{tool: 'qa'|'test'|'code', prompt: string}} */
-export async function generateText({ tool, prompt }) {
+/**
+ * Отправляет DeepSeek всю историю чата (уже включая новое сообщение
+ * пользователя) как контекст и возвращает ответ ассистента.
+ * @param {{messages: {role: 'user'|'assistant', content: string}[]}} args
+ */
+export async function generateChatReply({ messages }) {
   if (!config.ai.deepseekKey) {
-    return { text: simulatedText(tool, prompt), simulated: true };
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+    return { text: simulatedReply(lastUser), simulated: true };
   }
 
   let res;
@@ -79,8 +51,8 @@ export async function generateText({ tool, prompt }) {
         model: config.ai.deepseekModel,
         max_tokens: 1200,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPTS[tool] ?? SYSTEM_PROMPTS.qa },
-          { role: 'user', content: prompt },
+          { role: 'system', content: EDUARDO_SYSTEM_PROMPT },
+          ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),
       signal: AbortSignal.timeout(20000),

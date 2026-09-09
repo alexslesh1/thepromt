@@ -5,6 +5,7 @@ import { state } from '../state.js';
 import { navigate } from '../router.js';
 import { emptyState, h } from '../dom.js';
 import { icon } from '../icons.js';
+import { t } from '../i18n.js';
 import { feedList } from '../components/post.js';
 import { inlineComposer, selectWrap } from '../components/composer.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
@@ -94,9 +95,9 @@ export async function homeView({ query }) {
 
   main.append(
     header({
-      title: 'Главная',
-      subtitle: 'Открывайте новые промпты, идеи и людей',
-      pill: { icon: 'users', label: 'Сообщество для AI-креаторов' },
+      title: t('header.home.title'),
+      subtitle: t('header.home.subtitle'),
+      pill: { icon: 'users', label: t('header.home.pill') },
       tabs: {
         items: TABS,
         active: tab,

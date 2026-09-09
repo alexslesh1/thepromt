@@ -185,5 +185,4 @@ export const LIMITS = {
   tagsPerPost: 6,
   tagLength: 24,
   modelName: 60,
-  ownModelsPerUser: 20,
 };

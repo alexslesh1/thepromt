@@ -781,7 +781,7 @@ test('Pro: подписка требует входа', async () => {
   assert.equal(res.status, 401);
 });
 
-test('Eduardo: текстовый лимит free-пользователя и демо-режим', async () => {
+test('Eduardo: лимит free-пользователя, демо-режим и история чата', async () => {
   const created = await signUp('eduardo-free@example.com', 'eduardo_free', 'Едуардо Фри');
 
   const usageBefore = await created.call('GET', '/api/eduardo/usage');
@@ -791,23 +791,30 @@ test('Eduardo: текстовый лимит free-пользователя и д
 
   let last;
   for (let i = 0; i < 5; i += 1) {
-    last = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: `Вопрос номер ${i}` });
-    assert.equal(last.simulated, true, 'без DEEPSEEK_API_KEY ответ всегда демо-режим');
-    assert.ok(last.result.includes('Демо-ответ Eduardo'));
+    last = await created.call('POST', '/api/eduardo/chat', { message: `Сообщение номер ${i}` });
+    assert.equal(last.message.role, 'assistant');
+    assert.equal(last.message.simulated, true, 'без DEEPSEEK_API_KEY ответ всегда демо-режим');
+    assert.ok(last.message.content.includes('Демо-ответ Eduardo'));
   }
   assert.equal(last.usage.text.used, 5);
   assert.equal(last.usage.text.remaining, 0);
 
-  const overLimit = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Ещё один вопрос' }, { raw: true });
+  const overLimit = await created.call('POST', '/api/eduardo/chat', { message: 'Ещё одно сообщение' }, { raw: true });
   assert.equal(overLimit.status, 402);
   assert.equal(overLimit.data.code, 'limit_reached');
 
-  const history = await created.call('GET', '/api/eduardo/history');
-  assert.equal(history.items.length, 5);
-  assert.equal(history.items[0].tool, 'qa');
+  const history = await created.call('GET', '/api/eduardo/chat');
+  assert.equal(history.items.length, 10, '5 сообщений пользователя + 5 ответов ассистента');
+  assert.equal(history.items[0].role, 'user');
+  assert.equal(history.items[1].role, 'assistant');
+
+  const cleared = await created.call('DELETE', '/api/eduardo/chat', undefined, { raw: true });
+  assert.equal(cleared.status, 204);
+  const historyAfterClear = await created.call('GET', '/api/eduardo/chat');
+  assert.equal(historyAfterClear.items.length, 0);
 });
 
-test('Eduardo: параллельные запросы не пробивают месячный лимит (гонка)', async () => {
+test('Eduardo: параллельные сообщения не пробивают месячный лимит (гонка)', async () => {
   const created = await signUp('eduardo-race@example.com', 'eduardo_race', 'Едуардо Рейс');
 
   // Резервирование лимита — один атомарный SQL-запрос (INSERT/UPDATE с
@@ -817,7 +824,7 @@ test('Eduardo: параллельные запросы не пробивают �
   // здесь невозможна в принципе, а не просто маловероятна.
   const results = await Promise.all(
     Array.from({ length: 8 }, (_, i) =>
-      created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: `Гонка номер ${i}` }, { raw: true }),
+      created.call('POST', '/api/eduardo/chat', { message: `Гонка номер ${i}` }, { raw: true }),
     ),
   );
   const okCount = results.filter((r) => r.status === 200).length;
@@ -829,20 +836,14 @@ test('Eduardo: параллельные запросы не пробивают �
   assert.equal(usage.text.used, 5, 'счётчик не должен уйти выше лимита из-за гонки');
 });
 
-test('Eduardo: генерация теста и кода (демо-режим)', async () => {
+test('Eduardo: пустое сообщение отклоняется', async () => {
   const created = (eduardoTools = await signUp('eduardo-tools@example.com', 'eduardo_tools', 'Едуардо Тулс'));
 
-  const testResult = await created.call('POST', '/api/eduardo/text', { tool: 'test', prompt: 'Столицы Европы' });
-  assert.ok(testResult.result.includes('демо-заглушка') || testResult.result.toLowerCase().includes('демо'));
-
-  const codeResult = await created.call('POST', '/api/eduardo/text', { tool: 'code', prompt: 'Функция сортировки массива' });
-  assert.ok(codeResult.result.includes('```'));
-
-  const badTool = await created.call('POST', '/api/eduardo/text', { tool: 'nonsense', prompt: 'Что-то' }, { raw: true });
-  assert.equal(badTool.status, 400);
+  const badMessage = await created.call('POST', '/api/eduardo/chat', { message: '' }, { raw: true });
+  assert.equal(badMessage.status, 400);
 });
 
-test('Eduardo: текстовый запрос реально уходит в DeepSeek, когда ключ настроен', async () => {
+test('Eduardo: сообщение реально уходит в DeepSeek вместе с историей диалога, когда ключ настроен', async () => {
   // Переиспользуем аккаунт из предыдущего теста (не заводим нового пользователя
   // ради экономии общего лимита /api/auth/request-code на IP теста).
   const created = eduardoTools;
@@ -862,14 +863,15 @@ test('Eduardo: текстовый запрос реально уходит в De
   let result;
   try {
     await withDeepseekKey(async () => {
-      result = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Настоящий вопрос' });
+      result = await created.call('POST', '/api/eduardo/chat', { message: 'Настоящий вопрос' });
     });
   } finally {
     globalThis.fetch = originalFetch;
   }
-  assert.equal(result.simulated, false);
-  assert.equal(result.result, 'Настоящий ответ от DeepSeek.');
+  assert.equal(result.message.simulated, false);
+  assert.equal(result.message.content, 'Настоящий ответ от DeepSeek.');
   assert.equal(sentBody.model, 'deepseek-v4-flash');
+  assert.equal(sentBody.messages[0].role, 'system');
   assert.equal(sentBody.messages.at(-1).content, 'Настоящий вопрос');
 });
 
@@ -925,7 +927,7 @@ test('Eduardo: ежедневная уборка удаляет только с�
 });
 
 test('Eduardo требует входа', async () => {
-  const res = await client()('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Вопрос' }, { raw: true });
+  const res = await client()('POST', '/api/eduardo/chat', { message: 'Вопрос' }, { raw: true });
   assert.equal(res.status, 401);
 });
 
@@ -938,38 +940,9 @@ test('Модели: анонимный доступ к каталогу и со�
   assert.equal(res.status, 401);
 });
 
-test('Модели: пользователь добавляет свою модель, видна только у него и на его профиле', async () => {
-  // Не alice — её сессию убивает более ранний тест бана/разбана (бан
-  // закрывает все сессии, повторный вход тестом не выполняется).
-  // eduardoTools — посторонний пользователь: не владелец и не админ.
-  const created = await bob.call('POST', '/api/models', { name: 'Мой ассистент', iconUrl: 'https://example.com/a.png' });
-  assert.equal(created.model.name, 'Мой ассистент');
-  assert.equal(created.model.isGlobal, false);
-
-  const mineList = await bob.call('GET', '/api/models');
-  assert.ok(mineList.mine.some((m) => m.id === created.model.id));
-  assert.ok(!mineList.global.some((m) => m.id === created.model.id));
-
-  const publicList = await eduardoTools.call('GET', `/api/models/user/${bob.user.username}`);
-  assert.ok(publicList.items.some((m) => m.id === created.model.id));
-
-  const strangersView = await eduardoTools.call('GET', '/api/models');
-  assert.ok(!strangersView.mine.some((m) => m.id === created.model.id), 'чужая личная модель не должна попадать в mine');
-
-  const forbiddenDelete = await eduardoTools.call('DELETE', `/api/models/${created.model.id}`, undefined, { raw: true });
-  assert.equal(forbiddenDelete.status, 403, 'посторонний пользователь не может удалить чужую модель');
-
-  const renamed = await bob.call('PATCH', `/api/models/${created.model.id}`, { name: 'Обновлённое имя' });
-  assert.equal(renamed.model.name, 'Обновлённое имя');
-
-  // Админ модерирует чужие модели — это разрешённое действие, не 403.
-  await admin.call('DELETE', `/api/models/${created.model.id}`);
-  const afterDelete = await bob.call('GET', '/api/models');
-  assert.ok(!afterDelete.mine.some((m) => m.id === created.model.id));
-});
-
-test('Модели: только админ может добавлять в общий каталог', async () => {
-  const asUser = await bob.call('POST', '/api/models', { name: 'Хочу глобально', global: true }, { raw: true });
+test('Модели: обычный пользователь не может добавлять модели, только админ', async () => {
+  // bob — обычный пользователь, не админ.
+  const asUser = await bob.call('POST', '/api/models', { name: 'Хочу свою модель' }, { raw: true });
   assert.equal(asUser.status, 403);
 
   const created = await admin.call('POST', '/api/models', { name: 'Общая модель', global: true });
@@ -980,7 +953,10 @@ test('Модели: только админ может добавлять в о�
   assert.ok(list.global.some((m) => m.id === created.model.id), 'общая модель видна всем');
 
   const userDelete = await bob.call('DELETE', `/api/models/${created.model.id}`, undefined, { raw: true });
-  assert.equal(userDelete.status, 403);
+  assert.equal(userDelete.status, 403, 'обычный пользователь не может удалить общую модель');
+
+  const renamed = await admin.call('PATCH', `/api/models/${created.model.id}`, { name: 'Обновлённое имя' });
+  assert.equal(renamed.model.name, 'Обновлённое имя');
 
   await admin.call('DELETE', `/api/models/${created.model.id}`);
   const after = await client()('GET', '/api/models');

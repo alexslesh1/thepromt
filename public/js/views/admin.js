@@ -17,6 +17,7 @@ import {
   toast,
 } from '../dom.js';
 import { customModelIcon, icon } from '../icons.js';
+import { t } from '../i18n.js';
 import { postCard } from '../components/post.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
@@ -345,7 +346,7 @@ export async function adminView({ query }) {
 
   if (!isAdmin()) {
     main.append(
-      header({ title: 'Админ-панель' }),
+      header({ title: t('header.admin.title') }),
       emptyState('shieldCheck', 'Доступ только для администраторов', 'Этот раздел закрыт для обычных пользователей.'),
     );
     return;
@@ -355,7 +356,7 @@ export async function adminView({ query }) {
 
   main.append(
     header({
-      title: 'Админ-панель',
+      title: t('header.admin.title'),
       subtitle: 'Жалобы и модерация сообщества',
       tabs: {
         items: STATUS_TABS,

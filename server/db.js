@@ -203,6 +203,18 @@ CREATE TABLE IF NOT EXISTS eduardo_history (
 );
 CREATE INDEX IF NOT EXISTS idx_eduardo_history_user ON eduardo_history(user_id, created_at DESC);
 
+-- Непрерывный чат с Eduardo (один поток на пользователя, не пер-запросный
+-- вопрос-ответ) — DeepSeek получает всю историю как контекст диалога.
+CREATE TABLE IF NOT EXISTS eduardo_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL,   -- user | assistant
+  content    TEXT NOT NULL,
+  simulated  INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eduardo_messages_user ON eduardo_messages(user_id, id);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
