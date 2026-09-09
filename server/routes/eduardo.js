@@ -8,7 +8,7 @@ import { all, get, run } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { generateImage, generateText } from '../eduardo.js';
 import { isProActive } from '../store.js';
-import { badRequest, limitReached, text, wrap } from '../util.js';
+import { HttpError, badRequest, limitReached, text, wrap } from '../util.js';
 
 export const router = express.Router();
 
@@ -113,6 +113,10 @@ router.post(
   '/image',
   requireAuth,
   wrap(async (req, res) => {
+    if (!config.eduardo.imageEnabled) {
+      throw new HttpError(503, 'Генерация изображений в Eduardo скоро будет доступна.', 'image_coming_soon');
+    }
+
     const prompt = text(req.body?.prompt, { max: 800, min: 3, field: 'Запрос', required: true });
 
     const period = currentPeriod();

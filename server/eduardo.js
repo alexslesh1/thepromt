@@ -1,11 +1,15 @@
 /**
- * Движок Eduardo: генерация текста/кода/тестов и изображений.
+ * Движок Eduardo: генерация текста/кода/тестов (через DeepSeek) и изображений.
  *
- * Если в .env заданы ключи — вызывает настоящие API (Anthropic для текста,
- * OpenAI Images для картинок). Если ключей нет, работает в честном
- * демо-режиме: возвращает явно помеченный шаблонный результат вместо того,
- * чтобы притворяться настоящим ответом ИИ. Поле `simulated` в ответе всегда
- * говорит, какой режим сработал — интерфейс показывает это пользователю.
+ * Если в .env задан DEEPSEEK_API_KEY — текстовые инструменты зовут настоящий
+ * DeepSeek API. Если ключа нет, работает в честном демо-режиме: возвращает
+ * явно помеченный шаблонный результат вместо того, чтобы притворяться
+ * настоящим ответом ИИ. Поле `simulated` в ответе всегда говорит, какой режим
+ * сработал — интерфейс показывает это пользователю.
+ *
+ * Генерация изображений (generateImage/placeholderSvg) пока не подключена
+ * к интерфейсу — вкладка «Изображение» в Eduardo показывает «скоро будет
+ * доступно» (см. config.eduardo.imageEnabled и routes/eduardo.js).
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -19,7 +23,7 @@ const SYSTEM_PROMPTS = {
 };
 
 function simulatedText(tool, prompt) {
-  const banner = 'Демо-ответ Eduardo (на сервере не настроен ANTHROPIC_API_KEY — это шаблон, а не результат работы нейросети).';
+  const banner = 'Демо-ответ Eduardo (на сервере не настроен DEEPSEEK_API_KEY — это шаблон, а не результат работы нейросети).';
   const trimmedPrompt = prompt.length > 200 ? `${prompt.slice(0, 200)}…` : prompt;
 
   if (tool === 'test') {
@@ -47,7 +51,7 @@ function simulatedText(tool, prompt) {
       `// Задача: ${trimmedPrompt}`,
       'function solve() {',
       '  // TODO: здесь будет реализация от настоящей модели',
-      '  throw new Error("Демо-заглушка — подключите ANTHROPIC_API_KEY для настоящей генерации кода");',
+      '  throw new Error("Демо-заглушка — подключите DEEPSEEK_API_KEY для настоящей генерации кода");',
       '}',
       '```',
     ].join('\n');
@@ -58,32 +62,42 @@ function simulatedText(tool, prompt) {
 
 /** @param {{tool: 'qa'|'test'|'code', prompt: string}} */
 export async function generateText({ tool, prompt }) {
-  if (!config.ai.anthropicKey) {
+  if (!config.ai.deepseekKey) {
     return { text: simulatedText(tool, prompt), simulated: true };
   }
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': config.ai.anthropicKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: config.ai.anthropicModel,
-      max_tokens: 1200,
-      system: SYSTEM_PROMPTS[tool] ?? SYSTEM_PROMPTS.qa,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let res;
+  try {
+    res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${config.ai.deepseekKey}`,
+      },
+      body: JSON.stringify({
+        model: config.ai.deepseekModel,
+        max_tokens: 1200,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPTS[tool] ?? SYSTEM_PROMPTS.qa },
+          { role: 'user', content: prompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error('DeepSeek не ответил вовремя, попробуйте ещё раз.');
+    }
+    throw new Error('Не удалось связаться с DeepSeek, попробуйте позже.');
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Anthropic API вернул ошибку ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(`DeepSeek API вернул ошибку ${res.status}: ${body.slice(0, 200)}`);
   }
   const json = await res.json();
-  const text = json.content?.map((block) => block.text ?? '').join('\n').trim();
-  if (!text) throw new Error('Anthropic API вернул пустой ответ');
+  const text = json.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error('DeepSeek API вернул пустой ответ');
   return { text, simulated: false };
 }
 

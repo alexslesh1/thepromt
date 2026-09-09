@@ -117,6 +117,14 @@ function resultBox(payload) {
   return box;
 }
 
+function comingSoonPanel() {
+  return emptyState(
+    'image',
+    'Скоро будет доступно',
+    'Генерация изображений в Eduardo пока не подключена — загляните позже.',
+  );
+}
+
 function toolPanel(tool, onDone) {
   const input = h('textarea', { class: 'textarea', rows: 4, placeholder: tool.placeholder });
   autoGrow(input, 260);
@@ -280,7 +288,13 @@ export async function eduardoView() {
 
   const historyBox = h('div', {}, spinner('Загружаем историю…'));
 
+  const imageEnabled = state.meta?.eduardo?.imageEnabled ?? false;
+
   function renderPanel() {
+    if (activeTool.id === 'image' && !imageEnabled) {
+      panelSlot.replaceChildren(comingSoonPanel());
+      return;
+    }
     panelSlot.replaceChildren(
       toolPanel(activeTool, (usage) => {
         usageSlot.replaceChildren(usageBar(usage));

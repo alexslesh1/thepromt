@@ -15,12 +15,28 @@ process.env.ADMIN_EMAILS = 'admin@example.com';
 process.env.SESSION_SECRET = 'test-secret';
 process.env.GITHUB_CLIENT_ID = 'test-github-client';
 process.env.GITHUB_CLIENT_SECRET = 'test-github-secret';
-// Фиксированный тестовый ключ — чтобы тесты никогда не били по настоящему
-// DeepSeek API и не тратили реальный баланс, даже если в .env лежит боевой ключ.
-process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+// DEEPSEEK_API_KEY намеренно не задан здесь: по умолчанию тесты должны видеть
+// то же «не настроено», что и чистый сервер без .env (демо-режим Eduardo,
+// честная 503 в /api/test-prompt). Тесты, которым нужен «настроенный» ключ,
+// временно подставляют его через withDeepseekKey() ниже — так тесты никогда
+// не бьют по-настоящему в DeepSeek и не тратят реальный баланс, даже если
+// в .env лежит боевой ключ (он читается в process.env, а не в config).
+process.env.DEEPSEEK_API_KEY = '';
 
 const { app } = await import('../server/index.js');
 const { closeDb } = await import('../server/db.js');
+const { config } = await import('../server/config.js');
+
+/** Временно подставляет тестовый ключ DeepSeek на время выполнения fn(). */
+async function withDeepseekKey(fn) {
+  const original = config.ai.deepseekKey;
+  config.ai.deepseekKey = 'test-deepseek-key';
+  try {
+    await fn();
+  } finally {
+    config.ai.deepseekKey = original;
+  }
+}
 
 let server;
 let base;
@@ -75,6 +91,7 @@ let alice;
 let bob;
 let admin;
 let postId;
+let eduardoTools;
 
 test('регистрация по email с кодом подтверждения', async () => {
   alice = await signUp('alice@example.com', 'alice', 'Алиса');
@@ -755,7 +772,7 @@ test('Eduardo: текстовый лимит free-пользователя и д
   let last;
   for (let i = 0; i < 5; i += 1) {
     last = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: `Вопрос номер ${i}` });
-    assert.equal(last.simulated, true, 'без ANTHROPIC_API_KEY ответ всегда демо-режим');
+    assert.equal(last.simulated, true, 'без DEEPSEEK_API_KEY ответ всегда демо-режим');
     assert.ok(last.result.includes('Демо-ответ Eduardo'));
   }
   assert.equal(last.usage.text.used, 5);
@@ -770,8 +787,8 @@ test('Eduardo: текстовый лимит free-пользователя и д
   assert.equal(history.items[0].tool, 'qa');
 });
 
-test('Eduardo: генерация теста, кода и изображения (демо-режим)', async () => {
-  const created = await signUp('eduardo-tools@example.com', 'eduardo_tools', 'Едуардо Тулс');
+test('Eduardo: генерация теста и кода (демо-режим)', async () => {
+  const created = (eduardoTools = await signUp('eduardo-tools@example.com', 'eduardo_tools', 'Едуардо Тулс'));
 
   const testResult = await created.call('POST', '/api/eduardo/text', { tool: 'test', prompt: 'Столицы Европы' });
   assert.ok(testResult.result.includes('демо-заглушка') || testResult.result.toLowerCase().includes('демо'));
@@ -781,15 +798,48 @@ test('Eduardo: генерация теста, кода и изображения
 
   const badTool = await created.call('POST', '/api/eduardo/text', { tool: 'nonsense', prompt: 'Что-то' }, { raw: true });
   assert.equal(badTool.status, 400);
+});
 
-  const image = await created.call('POST', '/api/eduardo/image', { prompt: 'Киберпанк-город ночью' });
-  assert.equal(image.simulated, true);
-  assert.ok(image.url.startsWith('/uploads/'));
-  assert.equal(image.usage.image.used, 1);
-  assert.equal(image.usage.image.limit, 1);
+test('Eduardo: текстовый запрос реально уходит в DeepSeek, когда ключ настроен', async () => {
+  // Переиспользуем аккаунт из предыдущего теста (не заводим нового пользователя
+  // ради экономии общего лимита /api/auth/request-code на IP теста).
+  const created = eduardoTools;
 
-  const overImageLimit = await created.call('POST', '/api/eduardo/image', { prompt: 'Ещё картинка' }, { raw: true });
-  assert.equal(overImageLimit.status, 402);
+  const originalFetch = globalThis.fetch;
+  let sentBody;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://api.deepseek.com/chat/completions') {
+      sentBody = JSON.parse(init.body);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Настоящий ответ от DeepSeek.' } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  };
+  let result;
+  try {
+    await withDeepseekKey(async () => {
+      result = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Настоящий вопрос' });
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(result.simulated, false);
+  assert.equal(result.result, 'Настоящий ответ от DeepSeek.');
+  assert.equal(sentBody.model, 'deepseek-v4-flash');
+  assert.equal(sentBody.messages.at(-1).content, 'Настоящий вопрос');
+});
+
+test('Eduardo: генерация изображений пока отключена — «скоро будет доступно»', async () => {
+  const created = eduardoTools;
+
+  const res = await created.call('POST', '/api/eduardo/image', { prompt: 'Киберпанк-город ночью' }, { raw: true });
+  assert.equal(res.status, 503);
+  assert.equal(res.data.code, 'image_coming_soon');
+
+  const usage = await created.call('GET', '/api/eduardo/usage');
+  assert.equal(usage.image.used, 0, 'отключённая генерация не должна тратить лимит');
 });
 
 test('Eduardo: у Pro-пользователя лимиты выше', async () => {
@@ -833,7 +883,9 @@ test('test-prompt: успешный ответ DeepSeek не содержит к
   };
   let res;
   try {
-    res = await client()('POST', '/api/test-prompt', { prompt: 'Скажи привет' }, { raw: true });
+    await withDeepseekKey(async () => {
+      res = await client()('POST', '/api/test-prompt', { prompt: 'Скажи привет' }, { raw: true });
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -858,7 +910,9 @@ test('test-prompt: невалидный ключ DeepSeek превращаетс
   };
   let res;
   try {
-    res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+    await withDeepseekKey(async () => {
+      res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -879,7 +933,9 @@ test('test-prompt: таймаут запроса к DeepSeek возвращае�
   };
   let res;
   try {
-    res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+    await withDeepseekKey(async () => {
+      res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -888,15 +944,7 @@ test('test-prompt: таймаут запроса к DeepSeek возвращае�
 });
 
 test('test-prompt: без ключа на сервере честно сообщает, что не настроен', async () => {
-  const { config } = await import('../server/config.js');
-  const original = config.ai.deepseekKey;
-  config.ai.deepseekKey = '';
-  let res;
-  try {
-    res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
-  } finally {
-    config.ai.deepseekKey = original;
-  }
+  const res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
   assert.equal(res.status, 503);
   assert.equal(res.data.code, 'deepseek_not_configured');
 });
@@ -925,16 +973,18 @@ test('test-prompt: rate limit — не больше 10 запросов в ми�
       body: JSON.stringify({ prompt }),
     });
   try {
-    let last;
-    for (let i = 0; i < 11; i++) {
-      last = await post(`Запрос ${i}`);
-    }
-    assert.equal(last.status, 429);
-    const data = await last.json();
-    assert.equal(data.code, 'rate_limited');
+    await withDeepseekKey(async () => {
+      let last;
+      for (let i = 0; i < 11; i++) {
+        last = await post(`Запрос ${i}`);
+      }
+      assert.equal(last.status, 429);
+      const data = await last.json();
+      assert.equal(data.code, 'rate_limited');
 
-    const eleventhAllowed = await post('Проверка что 10-й ещё проходит');
-    assert.equal(eleventhAllowed.status, 429, 'лимит не сбрасывается между запросами в пределах минуты');
+      const eleventhAllowed = await post('Проверка что 10-й ещё проходит');
+      assert.equal(eleventhAllowed.status, 429, 'лимит не сбрасывается между запросами в пределах минуты');
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

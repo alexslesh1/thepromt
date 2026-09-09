@@ -91,8 +91,6 @@ export const config = {
     discord: { clientId: env.DISCORD_CLIENT_ID || '', clientSecret: env.DISCORD_CLIENT_SECRET || '' },
   },
   ai: {
-    anthropicKey: env.ANTHROPIC_API_KEY || '',
-    anthropicModel: env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
     openaiKey: env.OPENAI_API_KEY || '',
     openaiImageModel: env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
     deepseekKey: env.DEEPSEEK_API_KEY || '',
@@ -109,6 +107,9 @@ export const config = {
     freeImageLimit: 1,
     proTextLimit: 20,
     proImageLimit: 3,
+    // Генерация изображений временно отключена — вкладка показывает
+    // «скоро будет доступно» вместо формы, пока эта фича не готова.
+    imageEnabled: false,
   },
   pro: {
     priceLabel: '$10 / месяц',

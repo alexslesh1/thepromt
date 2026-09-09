@@ -321,7 +321,7 @@ await step('раздел «Сообщения»', async () => {
   await shot('18-messages');
 });
 
-await step('раздел Eduardo: вопрос-ответ, код и лимит изображений', async () => {
+await step('раздел Eduardo: вопрос-ответ, код (DeepSeek) и заглушка изображений', async () => {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.locator('.side-card.ai').click();
   await page.waitForURL(/\/eduardo/);
@@ -341,21 +341,13 @@ await step('раздел Eduardo: вопрос-ответ, код и лимит 
   await page.waitForSelector('.eduardo-result', { timeout: 8000 });
   if (!(await page.locator('.eduardo-text').innerText()).includes('```')) throw new Error('код не сгенерирован');
 
-  // Один бесплатный лимит на изображения — второй запрос должен отказать с апсейлом на Pro.
+  // Генерация изображений пока отключена — вкладка должна честно говорить «скоро».
   await page.getByRole('button', { name: 'Изображение', exact: true }).click();
-  await page.locator('form textarea').fill('Киберпанк город ночью, неон');
-  await page.locator('form button[type=submit]').click();
-  await page.waitForSelector('.eduardo-image', { timeout: 8000 });
-  await shot('21-eduardo-image');
-
-  await page.locator('form textarea').fill('Ещё одно изображение сверх лимита');
-  await page.locator('form button[type=submit]').click();
-  await page.waitForSelector('.error-text', { timeout: 8000 });
-  const limitError = await page.locator('.error-text').innerText();
-  if (!limitError.includes('Лимит')) throw new Error('лимит изображений не сработал');
-  if (!(await page.locator('.error-text button', { hasText: 'Оформить Pro' }).count())) {
-    throw new Error('нет апсейла на Pro при исчерпанном лимите');
-  }
+  await page.waitForSelector('.empty h3');
+  const comingSoon = await page.locator('.empty h3').innerText();
+  if (!comingSoon.includes('Скоро будет доступно')) throw new Error('вкладка «Изображение» не показывает «скоро будет доступно»');
+  if (await page.locator('form textarea').count()) throw new Error('форма генерации изображений не должна отображаться');
+  await shot('21-eduardo-image-soon');
 
   const history = await page.locator('#app').innerText();
   if (!history.includes('История запросов')) throw new Error('блок истории не отрисован');

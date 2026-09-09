@@ -93,8 +93,8 @@ app.get('/api/meta', (req, res) => {
       freeImageLimit: config.eduardo.freeImageLimit,
       proTextLimit: config.eduardo.proTextLimit,
       proImageLimit: config.eduardo.proImageLimit,
-      textSimulated: !config.ai.anthropicKey,
-      imageSimulated: !config.ai.openaiKey,
+      textSimulated: !config.ai.deepseekKey,
+      imageEnabled: config.eduardo.imageEnabled,
     },
     user: req.user
       ? {
