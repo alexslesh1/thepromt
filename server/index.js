@@ -24,6 +24,7 @@ import { router as notificationsRouter } from './routes/notifications.js';
 import { router as adminRouter } from './routes/admin.js';
 import { router as proRouter } from './routes/pro.js';
 import { router as eduardoRouter } from './routes/eduardo.js';
+import { router as testPromptRouter } from './routes/testPrompt.js';
 
 export const app = express();
 
@@ -130,6 +131,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/pro', proRouter);
 app.use('/api/eduardo', eduardoRouter);
+app.use('/api/test-prompt', testPromptRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Метод API не найден' });
@@ -156,8 +158,12 @@ app.get(/^\/(?!api|uploads).*/, (_req, res) => {
 app.use((error, _req, res, _next) => {
   const status = error instanceof HttpError ? error.status : error.status || 500;
   if (status >= 500) console.error('[error]', error);
+  // HttpError с кодом — это сообщение, которое мы сами написали для клиента
+  // (например, конкретика по сбою внешнего API), а не сырой текст исключения —
+  // его безопасно показать, даже если статус 5xx.
+  const isSafeMessage = error instanceof HttpError && !!error.code;
   res.status(status).json({
-    error: status >= 500 ? 'Внутренняя ошибка сервера' : error.message,
+    error: status >= 500 && !isSafeMessage ? 'Внутренняя ошибка сервера' : error.message,
     code: error.code,
   });
 });

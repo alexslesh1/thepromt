@@ -95,6 +95,14 @@ export const config = {
     anthropicModel: env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
     openaiKey: env.OPENAI_API_KEY || '',
     openaiImageModel: env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+    deepseekKey: env.DEEPSEEK_API_KEY || '',
+    deepseekModel: env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+  },
+  testPrompt: {
+    maxPromptLength: 4000,
+    maxTokens: 1000,
+    timeoutMs: 20000,
+    rateLimit: { windowMs: 60 * 1000, max: 10 },
   },
   eduardo: {
     freeTextLimit: 5,

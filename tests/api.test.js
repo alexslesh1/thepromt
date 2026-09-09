@@ -15,6 +15,9 @@ process.env.ADMIN_EMAILS = 'admin@example.com';
 process.env.SESSION_SECRET = 'test-secret';
 process.env.GITHUB_CLIENT_ID = 'test-github-client';
 process.env.GITHUB_CLIENT_SECRET = 'test-github-secret';
+// Фиксированный тестовый ключ — чтобы тесты никогда не били по настоящему
+// DeepSeek API и не тратили реальный баланс, даже если в .env лежит боевой ключ.
+process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
 
 const { app } = await import('../server/index.js');
 const { closeDb } = await import('../server/db.js');
@@ -802,6 +805,139 @@ test('Eduardo: у Pro-пользователя лимиты выше', async () 
 test('Eduardo требует входа', async () => {
   const res = await client()('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Вопрос' }, { raw: true });
   assert.equal(res.status, 401);
+});
+
+test('test-prompt: пустой промпт отклоняется', async () => {
+  const res = await client()('POST', '/api/test-prompt', { prompt: '  ' }, { raw: true });
+  assert.equal(res.status, 400);
+});
+
+test('test-prompt: промпт длиннее 4000 символов отклоняется', async () => {
+  const res = await client()('POST', '/api/test-prompt', { prompt: 'а'.repeat(4001) }, { raw: true });
+  assert.equal(res.status, 400);
+});
+
+test('test-prompt: успешный ответ DeepSeek не содержит ключ и режет max_tokens', async () => {
+  const originalFetch = globalThis.fetch;
+  let sentBody;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://api.deepseek.com/chat/completions') {
+      sentBody = JSON.parse(init.body);
+      assert.equal(init.headers.authorization, 'Bearer test-deepseek-key');
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Привет! Это ответ DeepSeek.' } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  };
+  let res;
+  try {
+    res = await client()('POST', '/api/test-prompt', { prompt: 'Скажи привет' }, { raw: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(res.status, 200);
+  assert.equal(res.data.text, 'Привет! Это ответ DeepSeek.');
+  assert.equal(sentBody.model, 'deepseek-v4-flash');
+  assert.equal(sentBody.max_tokens, 1000);
+  const raw = JSON.stringify(res.data);
+  assert.ok(!raw.includes('test-deepseek-key'), 'ключ не должен попадать в ответ клиенту');
+});
+
+test('test-prompt: невалидный ключ DeepSeek превращается в понятную ошибку', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://api.deepseek.com/chat/completions') {
+      return new Response(JSON.stringify({ error: { message: 'Invalid API key sk-real-secret-value' } }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return originalFetch(url, init);
+  };
+  let res;
+  try {
+    res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(res.status, 502);
+  assert.equal(res.data.code, 'deepseek_auth');
+  assert.ok(!res.data.error.includes('sk-real-secret-value'), 'техническая ошибка DeepSeek не должна утекать клиенту');
+});
+
+test('test-prompt: таймаут запроса к DeepSeek возвращает 504', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://api.deepseek.com/chat/completions') {
+      const err = new Error('The operation was aborted');
+      err.name = 'TimeoutError';
+      throw err;
+    }
+    return originalFetch(url, init);
+  };
+  let res;
+  try {
+    res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(res.status, 504);
+  assert.equal(res.data.code, 'deepseek_timeout');
+});
+
+test('test-prompt: без ключа на сервере честно сообщает, что не настроен', async () => {
+  const { config } = await import('../server/config.js');
+  const original = config.ai.deepseekKey;
+  config.ai.deepseekKey = '';
+  let res;
+  try {
+    res = await client()('POST', '/api/test-prompt', { prompt: 'Тест' }, { raw: true });
+  } finally {
+    config.ai.deepseekKey = original;
+  }
+  assert.equal(res.status, 503);
+  assert.equal(res.data.code, 'deepseek_not_configured');
+});
+
+test('test-prompt: rate limit — не больше 10 запросов в минуту с одного IP', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://api.deepseek.com/chat/completions') {
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return originalFetch(url, init);
+  };
+  // Свой X-Forwarded-For, чтобы не делить счётчик лимита с предыдущими тестами
+  // (все они шли с одного и того же IP тестового клиента).
+  const post = (prompt) =>
+    fetch(`${base}/api/test-prompt`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Requested-With': 'ThePrompt',
+        'X-Forwarded-For': '203.0.113.42',
+      },
+      body: JSON.stringify({ prompt }),
+    });
+  try {
+    let last;
+    for (let i = 0; i < 11; i++) {
+      last = await post(`Запрос ${i}`);
+    }
+    assert.equal(last.status, 429);
+    const data = await last.json();
+    assert.equal(data.code, 'rate_limited');
+
+    const eleventhAllowed = await post('Проверка что 10-й ещё проходит');
+    assert.equal(eleventhAllowed.status, 429, 'лимит не сбрасывается между запросами в пределах минуты');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('выход закрывает сессию', async () => {
