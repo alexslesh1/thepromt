@@ -156,7 +156,7 @@ function proCard() {
     h(
       'span',
       { class: 'grow' },
-      h('span', { class: 't' }, active ? t('pro.cardActive') : t('pro.cardInactive'), active ? proBadge(14) : null),
+      h('span', { class: 't', text: active ? t('pro.cardActive') : t('pro.cardInactive') }),
       h('span', { class: 's', text: active ? t('pro.cardManage') : t('pro.cardPitch') }),
     ),
     icon('chevronRight', { size: 16, class: 'chev' }),

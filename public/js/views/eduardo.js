@@ -1,13 +1,17 @@
 /**
  * Eduardo — ИИ-помощник ThePrompt: непрерывный чат (не разовый вопрос-ответ),
- * с моделью Eduardo-S1. Генерация изображений — отдельно, «скоро будет
- * доступно». Лимиты — по месяцам, у Pro больше.
+ * с моделью Eduardo-S1. Оформление — по референсу интерфейса DeepSeek:
+ * пузырь только у сообщения пользователя, ответ ассистента — обычный текст,
+ * код — отдельная карточка с подсветкой, копированием и скачиванием.
+ * Генерация изображений — отдельно, «скоро будет доступно». Лимиты — по
+ * месяцам, у Pro больше.
  */
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { navigate } from '../router.js';
 import { autoGrow, confirmDialog, copyText, emptyState, h, spinner, timeEl, toast } from '../dom.js';
 import { icon, proBadge } from '../icons.js';
+import { extensionFor, highlightCode } from '../highlight.js';
 import { t } from '../i18n.js';
 import { openAuth } from '../components/auth.js';
 import { openComposer } from '../components/composer.js';
@@ -27,6 +31,89 @@ export function sendPromptToEduardo(promptText) {
 }
 
 const MODELS = [{ id: 'eduardo-s1', label: 'Eduardo-S1' }];
+
+/** Разбивает текст ответа на сегменты обычного текста и блоков кода (```lang\n...\n```). */
+function parseMessageBlocks(content) {
+  const blocks = [];
+  const re = /```(\w*)\n?([\s\S]*?)```/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(content))) {
+    if (m.index > last) blocks.push({ type: 'text', text: content.slice(last, m.index) });
+    blocks.push({ type: 'code', lang: m[1] || '', code: m[2].replace(/\n$/, '') });
+    last = re.lastIndex;
+  }
+  if (last < content.length) blocks.push({ type: 'text', text: content.slice(last) });
+  return blocks.filter((b) => b.type === 'code' || b.text.trim());
+}
+
+function downloadCode(code, ext) {
+  const blob = new Blob([code], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `snippet.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function codeBlock(lang, code) {
+  const pre = h('pre', {});
+  const codeEl = document.createElement('code');
+  codeEl.innerHTML = highlightCode(code);
+  pre.append(codeEl);
+
+  const isLong = code.split('\n').length > 20;
+  const body = h('div', { class: `eduardo-code-body${isLong ? ' clamped' : ''}` }, pre);
+
+  const head = h(
+    'div',
+    { class: 'eduardo-code-head' },
+    h('span', { class: 'lang', text: lang || 'text' }),
+    h('span', { class: 'spacer' }),
+    h(
+      'button',
+      {
+        class: 'eduardo-code-action',
+        type: 'button',
+        onClick: async () => {
+          await copyText(code);
+          toast('Скопировано');
+        },
+      },
+      icon('copy', { size: 13 }),
+      h('span', { text: 'Copy' }),
+    ),
+    h(
+      'button',
+      {
+        class: 'eduardo-code-action',
+        type: 'button',
+        onClick: () => downloadCode(code, extensionFor(lang)),
+      },
+      icon('download', { size: 13 }),
+      h('span', { text: 'Download' }),
+    ),
+  );
+
+  const card = h('div', { class: 'eduardo-code' }, head, body);
+  if (isLong) {
+    const toggle = h(
+      'button',
+      {
+        class: 'eduardo-code-toggle',
+        type: 'button',
+        onClick: () => {
+          const collapsed = body.classList.toggle('clamped');
+          toggle.classList.toggle('expanded', !collapsed);
+        },
+      },
+      icon('chevronDown', { size: 16 }),
+    );
+    card.append(toggle);
+  }
+  return card;
+}
 
 function usageBar(usage) {
   const stat = (label, used, limit) => {
@@ -136,37 +223,57 @@ export async function eduardoView() {
     ),
   );
 
-  const feed = h('div', { class: 'dm-feed eduardo-feed' }, spinner('Загружаем переписку…'));
+  const feed = h('div', { class: 'eduardo-feed' }, spinner('Загружаем переписку…'));
   main.append(feed);
 
   const error = h('p', { class: 'error-text', style: { display: 'none' } });
+  main.append(error);
+
   const input = h('textarea', {
-    class: 'textarea dm-input',
+    class: 'eduardo-composer-input',
     rows: 1,
-    placeholder: 'Напишите сообщение Eduardo…',
+    placeholder: 'Написать Eduardo…',
     maxlength: 4000,
   });
-  autoGrow(input, 160);
+  const resizeInput = autoGrow(input, 200);
 
-  const imageBtn = h(
+  const searchBtn = h(
     'button',
     {
-      class: 'icon-btn',
+      class: 'eduardo-tool-btn',
       type: 'button',
-      title: 'Генерация изображений',
-      onClick: () => toast('Генерация изображений в Eduardo скоро будет доступна.'),
+      onClick: () => toast('Поиск в интернете скоро будет доступен.'),
     },
-    icon('image', { size: 18 }),
+    icon('globe', { size: 14 }),
+    h('span', { text: 'Search' }),
   );
-  const send = h('button', { class: 'btn', type: 'submit' }, icon('send', { size: 15 }));
+  const attachBtn = h(
+    'button',
+    {
+      class: 'icon-btn eduardo-attach-btn',
+      type: 'button',
+      title: 'Прикрепить файл',
+      onClick: () => toast('Прикрепление файлов скоро будет доступно.'),
+    },
+    icon('paperclip', { size: 17 }),
+  );
+  const send = h('button', { class: 'eduardo-send-btn', type: 'submit', title: 'Отправить' }, icon('arrowUp', { size: 17 }));
+
   const form = h(
     'form',
-    { class: 'comment-form', onSubmit: handleSubmit },
-    imageBtn,
-    h('div', { class: 'grow' }, input),
-    send,
+    { class: 'eduardo-composer-form', onSubmit: handleSubmit },
+    input,
+    h('div', { class: 'eduardo-composer-tools' }, searchBtn, h('span', { class: 'spacer' }), attachBtn, send),
   );
-  main.append(error, form);
+
+  main.append(
+    h(
+      'div',
+      { class: 'eduardo-composer-wrap' },
+      h('div', { class: 'eduardo-composer' }, form),
+      h('div', { class: 'eduardo-disclaimer', text: 'Ответы Eduardo создаются ИИ и могут содержать ошибки — проверяйте важные факты.' }),
+    ),
+  );
 
   function renderEmptyFeed() {
     feed.replaceChildren(
@@ -178,60 +285,101 @@ export async function eduardoView() {
     );
   }
 
-  function bubble(message) {
-    const isUser = message.role === 'user';
-    const actions =
-      !isUser
-        ? h(
-            'div',
-            { class: 'dm-bubble-actions' },
-            h(
-              'button',
-              {
-                class: 'btn ghost small',
-                type: 'button',
-                onClick: async () => {
-                  await copyText(message.content);
-                  toast('Скопировано');
-                },
-              },
-              icon('copy', { size: 13 }),
-              h('span', { text: 'Скопировать' }),
-            ),
-            h(
-              'button',
-              {
-                class: 'btn ghost small',
-                type: 'button',
-                onClick: () => openComposer({ draft: { promptText: message.content } }),
-              },
-              icon('feather', { size: 13 }),
-              h('span', { text: 'Опубликовать' }),
-            ),
-          )
-        : null;
+  function assistantRow(message) {
+    const box = h('div', { class: 'eduardo-msg' });
+    for (const block of parseMessageBlocks(message.content)) {
+      box.append(block.type === 'code' ? codeBlock(block.lang, block.code) : h('p', { class: 'eduardo-msg-text', text: block.text.trim() }));
+    }
+    if (message.simulated) {
+      box.append(
+        h(
+          'div',
+          { class: 'eduardo-sim-note' },
+          icon('warn', { size: 12 }),
+          h('span', { text: 'Демо-режим: на сервере не настроен ключ API.' }),
+        ),
+      );
+    }
+    box.append(
+      h(
+        'div',
+        { class: 'eduardo-msg-actions' },
+        h(
+          'button',
+          {
+            class: 'icon-btn',
+            type: 'button',
+            title: 'Скопировать',
+            onClick: async () => {
+              await copyText(message.content);
+              toast('Скопировано');
+            },
+          },
+          icon('copy', { size: 13 }),
+        ),
+        h(
+          'button',
+          {
+            class: 'icon-btn',
+            type: 'button',
+            title: 'Опубликовать как промпт',
+            onClick: () => openComposer({ draft: { promptText: message.content } }),
+          },
+          icon('feather', { size: 13 }),
+        ),
+      ),
+    );
+    if (message.createdAt) box.append(timeEl(message.createdAt));
+    return h('div', { class: 'eduardo-row assistant' }, box);
+  }
 
+  function userRow(message) {
     return h(
       'div',
-      { class: `dm-bubble${isUser ? ' mine' : ''}` },
-      h('div', { class: 'dm-bubble-text', text: message.content }),
-      message.simulated
-        ? h(
-            'div',
-            { class: 'eduardo-sim-note' },
-            icon('warn', { size: 12 }),
-            h('span', { text: 'Демо-режим: на сервере не настроен ключ API.' }),
-          )
-        : null,
-      actions,
-      message.createdAt ? timeEl(message.createdAt) : null,
+      { class: 'eduardo-row user' },
+      h('div', { class: 'eduardo-user-bubble' }, h('p', { class: 'eduardo-msg-text', text: message.content })),
+      h(
+        'div',
+        { class: 'eduardo-msg-actions' },
+        h(
+          'button',
+          {
+            class: 'icon-btn',
+            type: 'button',
+            title: 'Скопировать',
+            onClick: async () => {
+              await copyText(message.content);
+              toast('Скопировано');
+            },
+          },
+          icon('copy', { size: 13 }),
+        ),
+        h(
+          'button',
+          {
+            class: 'icon-btn',
+            type: 'button',
+            title: 'Редактировать',
+            onClick: () => {
+              input.value = message.content;
+              resizeInput();
+              input.focus();
+            },
+          },
+          icon('edit', { size: 13 }),
+        ),
+      ),
     );
+  }
+
+  function bubble(message) {
+    return message.role === 'user' ? userRow(message) : assistantRow(message);
   }
 
   function appendBubble(message) {
     feed.querySelector('.empty')?.remove();
     feed.append(bubble(message));
-    feed.scrollTop = feed.scrollHeight;
+    feed.scrollIntoView({ block: 'end' });
   }
 
   async function loadUsage() {
@@ -252,7 +400,6 @@ export async function eduardoView() {
         renderEmptyFeed();
       } else {
         feed.replaceChildren(...items.map(bubble));
-        feed.scrollTop = feed.scrollHeight;
       }
     } catch (err) {
       feed.replaceChildren(emptyState('warn', 'Не удалось загрузить переписку', err.message));
@@ -270,11 +417,11 @@ export async function eduardoView() {
 
     const typing = h(
       'div',
-      { class: 'dm-bubble typing' },
-      h('div', { class: 'dm-bubble-text' }, h('span', { class: 'eduardo-dot' }), h('span', { class: 'eduardo-dot' }), h('span', { class: 'eduardo-dot' })),
+      { class: 'eduardo-row assistant' },
+      h('div', { class: 'eduardo-msg' }, h('div', { class: 'eduardo-typing' }, h('span', { class: 'eduardo-dot' }), h('span', { class: 'eduardo-dot' }), h('span', { class: 'eduardo-dot' }))),
     );
     feed.append(typing);
-    feed.scrollTop = feed.scrollHeight;
+    typing.scrollIntoView({ block: 'end' });
 
     try {
       const result = await api.eduardoSend(value);
@@ -307,7 +454,7 @@ export async function eduardoView() {
     const value = input.value.trim();
     if (!value) return;
     input.value = '';
-    input.style.height = 'auto';
+    resizeInput();
     await send_(value);
   }
 

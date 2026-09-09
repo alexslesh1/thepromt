@@ -22,10 +22,25 @@ import { run } from './db.js';
 const EDUARDO_SYSTEM_PROMPT =
   'Ты — Eduardo, ИИ-помощник ThePrompt (модель Eduardo-S1). Помогаешь с промптами для нейросетей, отвечаешь на вопросы, пишешь код, составляешь тесты и объясняешь темы. Отвечай по делу, кратко и точно, на языке пользователя (обычно русский), код оформляй в блоках ```.';
 
+const CODE_REQUEST_RE = /код|function|функци|программ|script|скрипт/i;
+
 function simulatedReply(prompt) {
   const banner = 'Демо-ответ Eduardo (на сервере не настроен DEEPSEEK_API_KEY — это шаблон, а не результат работы нейросети).';
   const trimmedPrompt = prompt.length > 200 ? `${prompt.slice(0, 200)}…` : prompt;
-  return [banner, '', `Ваше сообщение: «${trimmedPrompt}»`, '', 'Настоящий ответ появится здесь после настройки ключа API.'].join('\n');
+  const lines = [banner, '', `Ваше сообщение: «${trimmedPrompt}»`, '', 'Настоящий ответ появится здесь после настройки ключа API.'];
+  if (CODE_REQUEST_RE.test(prompt)) {
+    lines.push(
+      '',
+      'Пример оформления кода в демо-режиме:',
+      '```javascript',
+      '// Демо-заглушка — настоящий код появится после настройки DEEPSEEK_API_KEY',
+      'function solve() {',
+      '  throw new Error("demo");',
+      '}',
+      '```',
+    );
+  }
+  return lines.join('\n');
 }
 
 /**

@@ -594,27 +594,123 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .eduardo-bar-fill { height: 100%; border-radius: 999px; background: var(--gradient); transition: width .3s ease; }
 .eduardo-bar-fill.full { background: var(--danger); }
 
-.eduardo-result { margin-top: 16px; }
 .eduardo-sim-note {
-  display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; margin-bottom: 12px;
+  display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; margin: 8px 0 0;
   border-radius: var(--radius-sm); border: 1px solid rgba(242, 176, 30, .35);
   background: rgba(242, 176, 30, .08); color: var(--warning); font-size: 12.5px; line-height: 1.5;
 }
-.dm-bubble .eduardo-sim-note { margin: 6px 0 0; padding: 5px 8px; font-size: 11px; }
-.eduardo-text { color: #d6d9de; }
-[data-theme='light'] .eduardo-text { color: #1f2937; }
-.eduardo-image { display: block; width: 100%; max-width: 420px; border-radius: var(--radius-md); border: 1px solid var(--border); margin-bottom: 12px; }
 
 .eduardo-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; }
 .eduardo-toolbar .field { margin: 0; display: flex; align-items: center; gap: 8px; }
 .eduardo-toolbar .label { white-space: nowrap; }
 .eduardo-toolbar select.select { width: auto; padding: 7px 30px 7px 12px; font-size: 13px; }
-.dm-bubble-actions { display: flex; gap: 6px; margin-top: 6px; }
-.dm-bubble.typing .dm-bubble-text { display: flex; gap: 4px; align-items: center; }
+
+.eduardo-typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
 .eduardo-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .5; animation: eduardo-blink 1.2s infinite ease-in-out; }
 .eduardo-dot:nth-child(2) { animation-delay: .2s; }
 .eduardo-dot:nth-child(3) { animation-delay: .4s; }
 @keyframes eduardo-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: .9; } }
+
+/* ------------------------------ Чат Eduardo ------------------------------ */
+/* Референс — интерфейс DeepSeek: пузырь только у сообщения пользователя,
+   ответ ассистента — обычный текст без подложки, код — отдельная карточка. */
+
+.eduardo-feed { display: flex; flex-direction: column; gap: 18px; margin: 14px 0; min-height: 40vh; }
+
+.eduardo-row { display: flex; flex-direction: column; }
+.eduardo-row.user { align-items: flex-end; }
+.eduardo-row.assistant { align-items: stretch; }
+
+.eduardo-user-bubble {
+  max-width: 78%; padding: 10px 14px; border-radius: 16px 16px 4px 16px;
+  background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text);
+}
+[data-theme='light'] .eduardo-user-bubble { background: #2b2f36; color: #fff; border-color: #2b2f36; }
+.eduardo-user-bubble .eduardo-msg-text { white-space: pre-wrap; font-size: 14.5px; word-break: break-word; margin: 0; }
+
+.eduardo-msg { max-width: 92%; }
+.eduardo-msg-text {
+  white-space: pre-wrap; font-size: 14.5px; line-height: 1.65; color: #d6d9de; margin: 0 0 10px;
+}
+[data-theme='light'] .eduardo-msg-text { color: #1f2937; }
+.eduardo-msg-text:last-child { margin-bottom: 0; }
+
+.eduardo-msg-actions { display: flex; gap: 4px; margin-top: 6px; }
+.eduardo-row.user .eduardo-msg-actions { justify-content: flex-end; }
+.eduardo-msg-actions .icon-btn { width: 28px; height: 28px; }
+
+/* Блок кода — тёмная карточка с шапкой (язык + Copy/Download) поверх подсветки. */
+.eduardo-code {
+  position: relative; margin: 4px 0 10px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: #16181d; overflow: hidden;
+}
+[data-theme='light'] .eduardo-code { background: #f4f5f7; }
+.eduardo-code-head {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); background: rgba(255, 255, 255, .03);
+}
+[data-theme='light'] .eduardo-code-head { background: rgba(0, 0, 0, .03); }
+.eduardo-code-head .lang { font-size: 12px; color: var(--text-muted); text-transform: lowercase; }
+.eduardo-code-action {
+  display: flex; align-items: center; gap: 5px; border: 0; background: none; cursor: pointer;
+  color: var(--text-muted); font-size: 12.5px; padding: 3px 6px; border-radius: 6px;
+}
+.eduardo-code-action:hover { color: var(--text); background: var(--bg-hover); }
+.eduardo-code-body { overflow-x: auto; overflow-y: hidden; position: relative; max-height: 480px; transition: max-height .25s ease; }
+.eduardo-code-body.clamped { max-height: 320px; overflow-y: hidden; }
+.eduardo-code-body.clamped::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 64px;
+  background: linear-gradient(transparent, #16181d);
+}
+[data-theme='light'] .eduardo-code-body.clamped::after { background: linear-gradient(transparent, #f4f5f7); }
+.eduardo-code-body pre { margin: 0; padding: 14px 16px; }
+.eduardo-code-body code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; line-height: 1.6; white-space: pre; }
+.eduardo-code-toggle {
+  display: flex; justify-content: center; align-items: center; width: 100%; padding: 6px 0;
+  border: 0; border-top: 1px solid var(--border); background: none; cursor: pointer; color: var(--text-muted);
+}
+.eduardo-code-toggle:hover { color: var(--text); }
+.eduardo-code-toggle svg { transition: transform .2s ease; }
+.eduardo-code-toggle.expanded svg { transform: rotate(180deg); }
+
+.hl-kw { color: #c586c0; }
+.hl-str { color: #ce9178; }
+.hl-num { color: #b5cea8; }
+.hl-com { color: #6a9955; font-style: italic; }
+.hl-fn { color: #dcdcaa; }
+[data-theme='light'] .hl-kw { color: #af00db; }
+[data-theme='light'] .hl-str { color: #a31515; }
+[data-theme='light'] .hl-num { color: #098658; }
+[data-theme='light'] .hl-com { color: #008000; }
+[data-theme='light'] .hl-fn { color: #795e26; }
+
+/* Композер — закреплённая внизу карточка: поле ввода сверху, кнопки снизу. */
+.eduardo-composer-wrap { position: sticky; bottom: 0; padding: 10px 0 16px; background: var(--bg); z-index: 5; }
+.eduardo-composer {
+  border-radius: var(--radius); border: 1px solid var(--border-strong);
+  background: var(--bg-card); box-shadow: 0 8px 28px rgba(0, 0, 0, .28); padding: 12px 14px 10px;
+}
+.eduardo-composer-form { display: flex; flex-direction: column; gap: 8px; }
+.eduardo-composer-input {
+  border: 0; background: none; resize: none; min-height: 26px; max-height: 200px;
+  padding: 2px 2px 6px; font-size: 14.5px; color: var(--text);
+}
+.eduardo-composer-input:focus { outline: none; }
+.eduardo-composer-tools { display: flex; align-items: center; gap: 8px; }
+.eduardo-tool-btn {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: none; color: var(--text-muted);
+  font-size: 12.5px; cursor: pointer; transition: border-color .15s ease, color .15s ease;
+}
+.eduardo-tool-btn:hover { color: var(--text); }
+.eduardo-composer-tools .spacer { flex: 1; }
+.eduardo-attach-btn { width: 32px; height: 32px; color: var(--text-muted); }
+.eduardo-send-btn {
+  width: 32px; height: 32px; border-radius: 50%; border: 0; display: grid; place-items: center;
+  background: var(--accent); color: #fff; cursor: pointer; flex: none; transition: opacity .15s ease;
+}
+.eduardo-send-btn:disabled { opacity: .4; cursor: default; }
+.eduardo-disclaimer { text-align: center; font-size: 11.5px; color: var(--text-dim); margin-top: 8px; }
 
 .promo-card {
   position: relative; overflow: hidden; border-radius: var(--radius);

@@ -324,7 +324,7 @@ await step('публикация промпта с опросом и голос�
   await shot('17-poll');
 });
 
-await step('раздел Eduardo: чат, модель, история и заглушка изображений', async () => {
+await step('раздел Eduardo: чат, модель, история, код и заглушки Search/файлов', async () => {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.locator('.side-card.ai').click();
   await page.waitForURL(/\/eduardo/);
@@ -333,26 +333,38 @@ await step('раздел Eduardo: чат, модель, история и заг
   if (modelValue !== 'eduardo-s1') throw new Error(`неожиданная модель по умолчанию: ${modelValue}`);
   await shot('19-eduardo');
 
-  await page.locator('.dm-input').fill('Что такое ThePrompt?');
-  await page.locator('.comment-form button[type=submit]').click();
-  await page.waitForSelector('.dm-bubble .eduardo-sim-note', { timeout: 8000 });
-  const bubbleCount = await page.locator('.dm-bubble').count();
-  if (bubbleCount < 2) throw new Error('в чате должно быть хотя бы сообщение пользователя и ответ Eduardo');
-  const lastReply = await page.locator('.dm-bubble').last().locator('.dm-bubble-text').innerText();
+  await page.locator('.eduardo-composer-input').fill('Что такое ThePrompt?');
+  await page.locator('.eduardo-composer-form button[type=submit]').click();
+  await page.waitForSelector('.eduardo-row.assistant .eduardo-sim-note', { timeout: 8000 });
+  const rowCount = await page.locator('.eduardo-row').count();
+  if (rowCount < 2) throw new Error('в чате должно быть хотя бы сообщение пользователя и ответ Eduardo');
+  const lastReply = await page.locator('.eduardo-row.assistant').last().locator('.eduardo-msg-text').first().innerText();
   if (!lastReply.includes('Демо-ответ Eduardo')) throw new Error('ответ пуст или не помечен демо-режимом');
   await shot('20-eduardo-chat');
 
+  // Блок кода: карточка с языком, подсветкой и кнопками Copy/Download.
+  await page.locator('.eduardo-composer-input').fill('Функция сортировки массива на JS');
+  await page.locator('.eduardo-composer-form button[type=submit]').click();
+  await page.waitForSelector('.eduardo-code', { timeout: 8000 });
+  if (!(await page.locator('.eduardo-code code .hl-kw').count())) throw new Error('в блоке кода нет подсветки ключевых слов');
+  await shot('20b-eduardo-code');
+
   // История переписки переживает перезагрузку страницы (хранится в БД, не только в памяти вкладки).
   await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForSelector('.dm-bubble');
-  if (await page.locator('.dm-bubble').count() < 2) throw new Error('история чата не подгрузилась после перезагрузки');
+  await page.waitForSelector('.eduardo-row');
+  if (await page.locator('.eduardo-row').count() < 4) throw new Error('история чата не подгрузилась после перезагрузки');
 
-  // Генерация изображений пока отключена — честно предупреждаем тостом, а не притворяемся.
-  await page.locator('form.comment-form .icon-btn').click();
+  // Search и вложения пока не подключены — честно предупреждаем тостом, а не притворяемся.
+  await page.locator('.eduardo-tool-btn').click();
   await page.waitForSelector('.toast', { timeout: 4000 });
-  const imgToast = await page.locator('.toast').last().innerText();
-  if (!imgToast.includes('скоро будет доступна')) throw new Error('кнопка изображений не предупреждает о «скоро будет доступно»');
-  await shot('21-eduardo-image-soon');
+  const searchToast = await page.locator('.toast').last().innerText();
+  if (!searchToast.includes('скоро будет доступен')) throw new Error('кнопка Search не предупреждает о «скоро будет доступно»');
+
+  await page.locator('.eduardo-attach-btn').click();
+  await page.waitForSelector('.toast', { timeout: 4000 });
+  const attachToast = await page.locator('.toast').last().innerText();
+  if (!attachToast.includes('скоро будет доступно')) throw new Error('кнопка вложений не предупреждает о «скоро будет доступно»');
+  await shot('21-eduardo-composer');
 });
 
 await step('кнопка «Попробовать у Eduardo» переносит промпт поста в чат', async () => {
@@ -361,12 +373,12 @@ await step('кнопка «Попробовать у Eduardo» переноси�
   const firstPromptText = await page.locator('.post .prompt-box pre').first().innerText();
   await page.locator('.post .action.eduardo-try').first().click();
   await page.waitForURL(/\/eduardo/);
-  await page.waitForSelector('.dm-bubble.mine', { timeout: 8000 });
-  const transferred = await page.locator('.dm-bubble.mine').last().locator('.dm-bubble-text').innerText();
+  await page.waitForSelector('.eduardo-row.user', { timeout: 8000 });
+  const transferred = await page.locator('.eduardo-row.user').last().locator('.eduardo-msg-text').innerText();
   if (transferred.trim() !== firstPromptText.trim()) {
     throw new Error('текст промпта не перенёсся в чат Eduardo дословно');
   }
-  await page.waitForSelector('.dm-bubble:not(.mine) .eduardo-sim-note', { timeout: 8000 });
+  await page.waitForSelector('.eduardo-row.assistant .eduardo-sim-note', { timeout: 8000 });
 });
 
 await step('Pro: подписка активирует бейдж рядом с именем', async () => {
