@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { all, get, run } from '../db.js';
 import { requireAuth } from '../auth.js';
 import {
+  bookmarkedPostRows,
   buildFeedItems,
   likedPostRows,
   notify,
@@ -51,12 +52,20 @@ router.get(
     if (!row || !row.username) throw notFound('Пользователь не найден');
     const { limit, offset, page } = pagination(req);
     const viewerId = req.user?.id ?? 0;
-    const tab = req.query.tab === 'likes' ? 'likes' : 'posts';
+    const requested = String(req.query.tab ?? 'posts');
+    const tab = ['posts', 'likes', 'bookmarks'].includes(requested) ? requested : 'posts';
 
-    const rows =
-      tab === 'likes'
-        ? likedPostRows(row.id, { limit: limit + 1, offset })
-        : profileFeedRows(row.id, { limit: limit + 1, offset });
+    // Сохранённое — приватная вкладка: её видит только владелец профиля.
+    if (tab === 'bookmarks' && req.user?.id !== row.id) {
+      throw forbidden('Сохранённые промпты видны только владельцу профиля');
+    }
+
+    const loaders = {
+      posts: profileFeedRows,
+      likes: likedPostRows,
+      bookmarks: bookmarkedPostRows,
+    };
+    const rows = loaders[tab](row.id, { limit: limit + 1, offset });
 
     const hasMore = rows.length > limit;
     res.json({ items: buildFeedItems(rows.slice(0, limit), viewerId), page, limit, hasMore, tab });
@@ -184,7 +193,7 @@ meRouter.delete(
   }),
 );
 
-/** GET /api/search?q=… — поиск по промтам и людям. */
+/** GET /api/search?q=… — поиск по промптам и людям. */
 export const searchRouter = express.Router();
 
 searchRouter.get(

@@ -279,11 +279,12 @@ export function spinner(text = 'Загрузка…') {
   return h('div', { class: 'loader' }, h('div', { class: 'spinner' }), h('div', { text }));
 }
 
-export function emptyState(icon, title, text) {
+/** Пустое состояние. iconName — имя иконки из icons.js. */
+export function emptyState(iconName, title, text) {
   return h(
     'div',
     { class: 'empty' },
-    h('div', { class: 'big', text: icon }),
+    h('div', { class: 'big' }, icon(iconName, { size: 26 })),
     h('h3', { text: title }),
     text ? h('p', { text }) : null,
   );

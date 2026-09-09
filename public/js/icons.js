@@ -33,6 +33,33 @@ const PATHS = {
   ban: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM5.6 5.6l12.8 12.8',
   eye: 'M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+  message: 'M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-1L3 20l1.1-4.6a8.4 8.4 0 0 1-1.1-4A8.4 8.4 0 0 1 11.5 3h.5a8.4 8.4 0 0 1 9 8z',
+  users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+  chevronDown: 'M6 9l6 6 6-6',
+  chevronRight: 'M9 18l6-6-6-6',
+  crown: 'M2 18h20l-2-11-5 4-3-6-3 6-5-4z',
+  poll: 'M18 20V10M12 20V4M6 20v-6',
+  sliders: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
+  plus: 'M12 5v14M5 12h14',
+  sparkles: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 3v4M21 5h-4',
+  send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+  verified: 'M12 2 15 5l4-.5.5 4L22 12l-2.5 3.5.5 4-4-.5L12 22l-3-3-4 .5.5-4L3 12l2.5-3.5-.5-4 4 .5z',
+  shieldCheck: 'M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6zM9 12l2 2 4-4',
+};
+
+/** Абстрактные знаки для плиток моделей — без воспроизведения логотипов брендов. */
+const GLYPHS = {
+  spark: 'M12 4v16M4 12h16M6.5 6.5l11 11M17.5 6.5l-11 11',
+  burst: 'M12 3v18M5 6l14 12M19 6L5 18',
+  diamond: 'M12 3l5 9-5 9-5-9z',
+  sail: 'M12 3v18M12 3 5 18h7M12 6l6 12h-6',
+  palette: 'M12 3a9 9 0 1 0 0 18h2a3 3 0 0 0 0-6h-1a2 2 0 0 1 0-4h2a4 4 0 0 0-3-8zM8 9h.01M9 14h.01M15 7h.01',
+  layers: 'M12 3 3 8l9 5 9-5zM3 13l9 5 9-5',
+  wave: 'M3 12c3-5 6-5 9 0s6 5 9 0M3 17c3-5 6-5 9 0',
+  play: 'M8 5v14l11-7z',
+  note: 'M9 18V6l10-2v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM19 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+  circle: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  whale: 'M3 13c4 5 14 5 18 0-2-6-6-8-9-8s-7 2-9 8zM8 11h.01',
 };
 
 /**
@@ -56,7 +83,63 @@ export function icon(name, { size = 18, filled = false, class: className = '' } 
   svg.style.flex = 'none';
 
   const path = document.createElementNS(NS, 'path');
-  path.setAttribute('d', PATHS[name] ?? PATHS.more);
+  path.setAttribute('d', PATHS[name] ?? GLYPHS[name] ?? PATHS.more);
   svg.append(path);
   return svg;
+}
+
+/**
+ * Плитка модели: цветной квадрат с абстрактным знаком.
+ * @param {{color?: string, glyph?: string}} model
+ */
+export function modelTile(model, { big = false } = {}) {
+  const tile = document.createElement('span');
+  tile.className = `model-tile${big ? ' big' : ''}`;
+  const color = model?.color ?? '#8a8a8a';
+  tile.style.background = `linear-gradient(140deg, ${color}, ${color}99)`;
+  tile.style.boxShadow = `0 4px 14px ${color}45`;
+  tile.append(icon(model?.glyph ?? 'circle', { size: big ? 20 : 13 }));
+  return tile;
+}
+
+/** Логотип ThePrompt — скруглённый квадрат с синим градиентом и буквой P. */
+export function brandMark(size = 42) {
+  const box = document.createElement('span');
+  box.className = 'brand-mark';
+  box.style.width = `${size}px`;
+  box.style.height = `${size}px`;
+
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('width', Math.round(size * 0.6));
+  svg.setAttribute('height', Math.round(size * 0.6));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '3.2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  // Буква P как узел нейросети: стойка, петля и два ответвления-связи.
+  const letter = document.createElementNS(NS, 'path');
+  letter.setAttribute('d', 'M10 26V6h8a6 6 0 0 1 0 12h-8');
+  svg.append(letter);
+
+  const link = document.createElementNS(NS, 'path');
+  link.setAttribute('d', 'M18 18l6 6M24 6l-6 6');
+  link.setAttribute('opacity', '0.55');
+  svg.append(link);
+
+  for (const [cx, cy] of [[24, 24], [24, 6]]) {
+    const dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', cx);
+    dot.setAttribute('cy', cy);
+    dot.setAttribute('r', '2.6');
+    dot.setAttribute('fill', 'currentColor');
+    dot.setAttribute('stroke', 'none');
+    svg.append(dot);
+  }
+
+  box.append(svg);
+  return box;
 }

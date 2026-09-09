@@ -32,6 +32,17 @@ const env = process.env;
 const bool = (value, fallback = false) =>
   value === undefined ? fallback : ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 
+/**
+ * Файл базы по умолчанию. Если рядом лежит база от предыдущей версии
+ * проекта (promptshare.db), используем её — данные не теряются.
+ */
+function defaultDbFile() {
+  const dataDir = path.join(ROOT_DIR, 'data');
+  const legacy = path.join(dataDir, 'promptshare.db');
+  if (fs.existsSync(legacy)) return legacy;
+  return path.join(dataDir, 'theprompt.db');
+}
+
 export const config = {
   env: env.NODE_ENV || 'development',
   get isProduction() {
@@ -40,7 +51,7 @@ export const config = {
   port: Number(env.PORT || 3000),
   sessionSecret: env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   dataDir: path.join(ROOT_DIR, 'data'),
-  dbFile: env.DB_FILE || path.join(ROOT_DIR, 'data', 'promptshare.db'),
+  dbFile: env.DB_FILE || defaultDbFile(),
   uploadsDir: path.join(ROOT_DIR, 'uploads'),
   publicDir: path.join(ROOT_DIR, 'public'),
   adminEmails: (env.ADMIN_EMAILS || '')
@@ -53,7 +64,7 @@ export const config = {
     secure: bool(env.SMTP_SECURE, false),
     user: env.SMTP_USER || '',
     pass: env.SMTP_PASS || '',
-    from: env.MAIL_FROM || 'PromptShare <no-reply@promptshare.local>',
+    from: env.MAIL_FROM || 'ThePrompt <no-reply@theprompt.local>',
   },
   otp: {
     length: 6,

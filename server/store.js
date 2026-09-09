@@ -12,9 +12,14 @@ export function publicUser(row, viewerId = null) {
        (SELECT COUNT(*) FROM follows WHERE followee_id = $id)                      AS followers,
        (SELECT COUNT(*) FROM follows WHERE follower_id = $id)                      AS following,
        (SELECT COUNT(*) FROM likes l JOIN posts p ON p.id = l.post_id
-          WHERE p.author_id = $id AND p.deleted_at IS NULL)                        AS likes`,
+          WHERE p.author_id = $id AND p.deleted_at IS NULL)                        AS likes,
+       (SELECT COUNT(*) FROM bookmarks b JOIN posts p ON p.id = b.post_id
+          WHERE b.user_id = $id AND p.deleted_at IS NULL)                          AS bookmarks`,
     { id: row.id },
   );
+  // Число сохранённого — приватная величина, как и сама вкладка «Сохранённое».
+  if (viewerId !== row.id) delete counts.bookmarks;
+
   const isFollowing = viewerId
     ? !!get('SELECT 1 AS x FROM follows WHERE follower_id = $v AND followee_id = $id', {
         v: viewerId,
@@ -47,6 +52,7 @@ export function privateUser(row) {
     theme: row.theme,
     needsProfile: !row.username,
     unreadNotifications: countUnreadNotifications(row.id),
+    unreadMessages: countUnreadMessages(row.id),
     openReports: row.role === 'admin' ? countOpenReports() : 0,
   };
 }
@@ -66,8 +72,10 @@ const POST_SELECT = `
          (SELECT COUNT(*) FROM likes    l WHERE l.post_id = p.id)                          AS like_count,
          (SELECT COUNT(*) FROM reposts  r WHERE r.post_id = p.id)                          AS repost_count,
          (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
-         EXISTS(SELECT 1 FROM likes   l WHERE l.post_id = p.id AND l.user_id = $viewer)    AS liked,
-         EXISTS(SELECT 1 FROM reposts r WHERE r.post_id = p.id AND r.user_id = $viewer)    AS reposted
+         (SELECT COUNT(*) FROM bookmarks b WHERE b.post_id = p.id)                          AS bookmark_count,
+         EXISTS(SELECT 1 FROM likes     l WHERE l.post_id = p.id AND l.user_id = $viewer)  AS liked,
+         EXISTS(SELECT 1 FROM reposts   r WHERE r.post_id = p.id AND r.user_id = $viewer)  AS reposted,
+         EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $viewer)  AS bookmarked
   FROM posts p
   JOIN users u ON u.id = p.author_id
 `;
@@ -82,9 +90,11 @@ function tagsForPosts(ids) {
   return map;
 }
 
-function shapePost(row, tags = []) {
+function shapePost(row, tags = [], poll = null) {
   return {
     id: row.id,
+    title: row.title || '',
+    category: row.category || 'other',
     promptText: row.prompt_text,
     modelFamily: row.model_family,
     modelVersion: row.model_version || '',
@@ -96,6 +106,7 @@ function shapePost(row, tags = []) {
     deleted: !!row.deleted_at,
     deleteReason: row.delete_reason || null,
     tags,
+    poll,
     author: {
       id: row.author_id,
       username: row.username,
@@ -108,12 +119,53 @@ function shapePost(row, tags = []) {
       likes: row.like_count,
       reposts: row.repost_count,
       comments: row.comment_count,
+      bookmarks: row.bookmark_count,
     },
     viewer: {
       liked: !!row.liked,
       reposted: !!row.reposted,
+      bookmarked: !!row.bookmarked,
     },
   };
+}
+
+/**
+ * Собирает опросы для списка постов: варианты, число голосов и выбор зрителя.
+ * Возвращает Map postId → poll | null.
+ */
+function pollsForPosts(rows, viewerId = 0) {
+  const map = new Map(rows.map((r) => [r.id, null]));
+  const withPoll = rows.filter((r) => r.poll_question);
+  if (!withPoll.length) return map;
+
+  const list = withPoll.map((r) => Number(r.id)).join(',');
+  const options = all(
+    `SELECT o.id, o.post_id, o.position, o.text,
+            (SELECT COUNT(*) FROM poll_votes v WHERE v.option_id = o.id) AS votes
+     FROM poll_options o
+     WHERE o.post_id IN (${list})
+     ORDER BY o.post_id, o.position`,
+  );
+  const myVotes = new Map(
+    viewerId
+      ? all(
+          `SELECT post_id, option_id FROM poll_votes
+           WHERE user_id = $viewer AND post_id IN (${list})`,
+          { viewer: viewerId },
+        ).map((v) => [v.post_id, v.option_id])
+      : [],
+  );
+
+  for (const row of withPoll) {
+    const own = options.filter((o) => o.post_id === row.id);
+    map.set(row.id, {
+      question: row.poll_question,
+      totalVotes: own.reduce((sum, o) => sum + o.votes, 0),
+      votedOptionId: myVotes.get(row.id) ?? null,
+      options: own.map((o) => ({ id: o.id, text: o.text, votes: o.votes })),
+    });
+  }
+  return map;
 }
 
 /** Достаёт посты по списку id, сохраняя порядок ids. */
@@ -125,7 +177,10 @@ export function hydratePosts(ids, viewerId = 0, { includeDeleted = false } = {})
     { viewer: viewerId || 0 },
   );
   const tags = tagsForPosts(rows.map((r) => r.id));
-  const byId = new Map(rows.map((r) => [r.id, shapePost(r, tags.get(r.id) ?? [])]));
+  const polls = pollsForPosts(rows, viewerId);
+  const byId = new Map(
+    rows.map((r) => [r.id, shapePost(r, tags.get(r.id) ?? [], polls.get(r.id) ?? null)]),
+  );
   return ids.map((id) => byId.get(Number(id))).filter(Boolean);
 }
 
@@ -135,14 +190,26 @@ export function postById(id, viewerId = 0, { includeDeleted = false } = {}) {
     { id, viewer: viewerId || 0 },
   );
   if (!row) return null;
-  return shapePost(row, tagsForPosts([row.id]).get(row.id) ?? []);
+  return shapePost(row, tagsForPosts([row.id]).get(row.id) ?? [], pollsForPosts([row], viewerId).get(row.id) ?? null);
 }
 
 /**
  * Лента постов с фильтрами и сортировкой.
  * tab: latest | popular | following
  */
-export function feedPostIds({ tab = 'latest', viewerId = 0, model, difficulty, tag, q, authorId, limit, offset }) {
+export function feedPostIds({
+  tab = 'latest',
+  sort = 'new',
+  viewerId = 0,
+  model,
+  difficulty,
+  category,
+  tag,
+  q,
+  authorId,
+  limit,
+  offset,
+}) {
   const where = ['p.deleted_at IS NULL'];
   const params = { limit, offset, viewer: viewerId || 0 };
 
@@ -153,6 +220,10 @@ export function feedPostIds({ tab = 'latest', viewerId = 0, model, difficulty, t
   if (difficulty) {
     where.push('p.difficulty = $difficulty');
     params.difficulty = difficulty;
+  }
+  if (category) {
+    where.push('p.category = $category');
+    params.category = category;
   }
   if (tag) {
     where.push('EXISTS(SELECT 1 FROM post_tags t WHERE t.post_id = p.id AND t.tag = $tag)');
@@ -200,13 +271,20 @@ export function feedPostIds({ tab = 'latest', viewerId = 0, model, difficulty, t
     return rows;
   }
 
-  const order =
-    tab === 'popular'
-      ? `((SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id) * 3
-          + (SELECT COUNT(*) FROM reposts r WHERE r.post_id = p.id) * 2
-          + (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) * 2) DESC,
-         p.created_at DESC`
-      : 'p.created_at DESC, p.id DESC';
+  // Вкладка «Популярное» задаёт сортировку сама; на остальных её выбирает
+  // пользователь в селекторе «Сначала свежее».
+  const effectiveSort = tab === 'popular' ? 'popular' : sort;
+  const ORDERS = {
+    new: 'p.created_at DESC, p.id DESC',
+    popular: `((SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id) * 3
+        + (SELECT COUNT(*) FROM reposts r WHERE r.post_id = p.id) * 2
+        + (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) * 2
+        + (SELECT COUNT(*) FROM bookmarks b WHERE b.post_id = p.id) * 2) DESC,
+       p.created_at DESC`,
+    discussed: `(SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) DESC,
+       p.created_at DESC`,
+  };
+  const order = ORDERS[effectiveSort] ?? ORDERS.new;
 
   return all(
     `SELECT p.id AS post_id, p.created_at AS sort_at, NULL AS reposter_id
@@ -241,6 +319,17 @@ export function likedPostRows(userId, { limit, offset }) {
      FROM likes l JOIN posts p ON p.id = l.post_id
      WHERE l.user_id = $userId AND p.deleted_at IS NULL
      ORDER BY l.created_at DESC
+     LIMIT $limit OFFSET $offset`,
+    { userId, limit, offset },
+  );
+}
+
+export function bookmarkedPostRows(userId, { limit, offset }) {
+  return all(
+    `SELECT b.post_id AS post_id, b.created_at AS sort_at, NULL AS reposter_id
+     FROM bookmarks b JOIN posts p ON p.id = b.post_id
+     WHERE b.user_id = $userId AND p.deleted_at IS NULL
+     ORDER BY b.created_at DESC
      LIMIT $limit OFFSET $offset`,
     { userId, limit, offset },
   );
@@ -350,15 +439,35 @@ export const countUnreadNotifications = (userId) =>
     userId,
   }).n;
 
+/** Непрочитанные во внутренней переписке — бейдж пункта «Сообщения». */
+export const countUnreadMessages = (userId) =>
+  get(
+    `SELECT COUNT(*) AS n FROM notifications
+     WHERE user_id = $userId AND read_at IS NULL
+       AND type IN (${MESSAGE_TYPES.map((t) => `'${t}'`).join(', ')})`,
+    { userId },
+  ).n;
+
 export const countOpenReports = () =>
   get("SELECT COUNT(*) AS n FROM reports WHERE status = 'open'").n;
 
-export function listNotifications(userId, { limit, offset }) {
+/** Типы, которые показываются в разделе «Сообщения» (внутренняя переписка). */
+export const MESSAGE_TYPES = ['moderation', 'report', 'system'];
+
+export function listNotifications(userId, { limit, offset, kind = 'all' }) {
+  const quoted = MESSAGE_TYPES.map((t) => `'${t}'`).join(', ');
+  const filter =
+    kind === 'messages'
+      ? `AND n.type IN (${quoted})`
+      : kind === 'activity'
+        ? `AND n.type NOT IN (${quoted})`
+        : '';
+
   return all(
     `SELECT n.*, u.username AS actor_username, u.display_name AS actor_name, u.avatar_url AS actor_avatar
      FROM notifications n
      LEFT JOIN users u ON u.id = n.actor_id
-     WHERE n.user_id = $userId
+     WHERE n.user_id = $userId ${filter}
      ORDER BY n.created_at DESC, n.id DESC
      LIMIT $limit OFFSET $offset`,
     { userId, limit, offset },
@@ -399,6 +508,14 @@ export function topModels(limit = 6) {
   return all(
     `SELECT model_family AS id, COUNT(*) AS n FROM posts
      WHERE deleted_at IS NULL GROUP BY model_family ORDER BY n DESC LIMIT $limit`,
+    { limit },
+  ).map((r) => ({ id: r.id, count: r.n }));
+}
+
+export function topCategories(limit = 6) {
+  return all(
+    `SELECT category AS id, COUNT(*) AS n FROM posts
+     WHERE deleted_at IS NULL GROUP BY category ORDER BY n DESC LIMIT $limit`,
     { limit },
   ).map((r) => ({ id: r.id, count: r.n }));
 }

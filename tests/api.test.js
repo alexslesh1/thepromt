@@ -1,5 +1,5 @@
 /**
- * End-to-end проверка API PromptShare.
+ * End-to-end проверка API ThePrompt.
  * Запуск: npm test  (использует отдельную временную базу)
  */
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after, before } from 'node:test';
 
-const tmpDb = path.join(os.tmpdir(), `promptshare-test-${Date.now()}.db`);
+const tmpDb = path.join(os.tmpdir(), `theprompt-test-${Date.now()}.db`);
 process.env.DB_FILE = tmpDb;
 process.env.NODE_ENV = 'test';
 process.env.ADMIN_EMAILS = 'admin@example.com';
@@ -38,7 +38,7 @@ after(async () => {
 function client() {
   let cookie = '';
   return async function call(method, url, body, { raw = false } = {}) {
-    const headers = { 'X-Requested-With': 'PromptShare' };
+    const headers = { 'X-Requested-With': 'ThePrompt' };
     if (cookie) headers.cookie = cookie;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const res = await fetch(`${base}${url}`, {
@@ -425,6 +425,187 @@ test('запрос без заголовка X-Requested-With отклоняет
     body: JSON.stringify({ promptText: 'что-то', modelFamily: 'chatgpt' }),
   });
   assert.equal(res.status, 403);
+});
+
+
+test('заголовок, категория и фильтр по категории', async () => {
+  const created = await bob.call('POST', '/api/posts', {
+    title: 'Кинематографичная сцена в киберпанк-стиле',
+    category: 'images',
+    promptText: 'cinematic cyberpunk city at night, rain, neon lights, ultra detailed, 8k',
+    modelFamily: 'midjourney',
+    modelVersion: 'Midjourney v6.1',
+    difficulty: 'intermediate',
+    tags: ['киберпанк', 'город'],
+  });
+  assert.equal(created.post.title, 'Кинематографичная сцена в киберпанк-стиле');
+  assert.equal(created.post.category, 'images');
+
+  const byCategory = await client()('GET', '/api/posts?category=images');
+  assert.ok(byCategory.items.every((i) => i.post.category === 'images'));
+  assert.ok(byCategory.items.some((i) => i.post.id === created.post.id));
+
+  const badCategory = await bob.call(
+    'POST',
+    '/api/posts',
+    { promptText: 'Промт для проверки', modelFamily: 'chatgpt', category: 'нет-такой' },
+    { raw: true },
+  );
+  assert.equal(badCategory.status, 400);
+});
+
+test('сортировка ленты', async () => {
+  const newest = await client()('GET', '/api/posts?sort=new');
+  assert.ok(newest.items[0].sortAt >= newest.items[1].sortAt);
+
+  const discussed = await client()('GET', '/api/posts?sort=discussed');
+  assert.equal(discussed.sort, 'discussed');
+  assert.ok(discussed.items[0].post.counts.comments >= discussed.items.at(-1).post.counts.comments);
+});
+
+test('закладки: сохранить, снять, приватная вкладка профиля', async () => {
+  const target = (await client()('GET', '/api/posts')).items[0].post;
+
+  const saved = await bob.call('POST', `/api/posts/${target.id}/bookmark`);
+  assert.equal(saved.bookmarked, true);
+  assert.equal(saved.counts.bookmarks, 1);
+
+  const list = await bob.call('GET', '/api/users/bob/posts?tab=bookmarks');
+  assert.ok(list.items.some((i) => i.post.id === target.id));
+
+  // Чужие сохранённые не отдаются.
+  const foreign = await admin.call('GET', '/api/users/bob/posts?tab=bookmarks', undefined, { raw: true });
+  assert.equal(foreign.status, 403);
+  const anon = await client()('GET', '/api/users/bob/posts?tab=bookmarks', undefined, { raw: true });
+  assert.equal(anon.status, 403);
+
+  const removed = await bob.call('POST', `/api/posts/${target.id}/bookmark`);
+  assert.equal(removed.bookmarked, false);
+  await bob.call('POST', `/api/posts/${target.id}/bookmark`);
+});
+
+test('счётчик сохранённого виден только владельцу профиля', async () => {
+  const mine = await bob.call('GET', '/api/users/bob');
+  assert.equal(typeof mine.user.counts.bookmarks, 'number');
+
+  const foreign = await admin.call('GET', '/api/users/bob');
+  assert.equal(foreign.user.counts.bookmarks, undefined);
+
+  const anon = await client()('GET', '/api/users/bob');
+  assert.equal(anon.user.counts.bookmarks, undefined);
+});
+
+test('опрос: создание, голосование, смена голоса', async () => {
+  const created = await bob.call('POST', '/api/posts', {
+    title: 'Какой формат ответа удобнее?',
+    promptText: 'Промт с опросом для проверки голосования',
+    modelFamily: 'chatgpt',
+    category: 'text',
+    poll: { question: 'Какой формат ответа удобнее?', options: ['Таблица', 'Списком', 'Сплошным текстом'] },
+  });
+  const postId = created.post.id;
+  assert.equal(created.post.poll.question, 'Какой формат ответа удобнее?');
+  assert.equal(created.post.poll.options.length, 3);
+  assert.equal(created.post.poll.totalVotes, 0);
+  assert.equal(created.post.poll.votedOptionId, null);
+
+  const [first, second] = created.post.poll.options;
+  const voted = await admin.call('POST', `/api/posts/${postId}/vote`, { optionId: first.id });
+  assert.equal(voted.poll.totalVotes, 1);
+  assert.equal(voted.poll.votedOptionId, first.id);
+  assert.equal(voted.poll.options.find((o) => o.id === first.id).votes, 1);
+
+  // Повторный голос переносится на другой вариант, а не добавляется.
+  const moved = await admin.call('POST', `/api/posts/${postId}/vote`, { optionId: second.id });
+  assert.equal(moved.poll.totalVotes, 1);
+  assert.equal(moved.poll.votedOptionId, second.id);
+  assert.equal(moved.poll.options.find((o) => o.id === first.id).votes, 0);
+
+  const wrongOption = await admin.call('POST', `/api/posts/${postId}/vote`, { optionId: 999999 }, { raw: true });
+  assert.equal(wrongOption.status, 400);
+
+  const anon = await client()('POST', `/api/posts/${postId}/vote`, { optionId: second.id }, { raw: true });
+  assert.equal(anon.status, 401);
+});
+
+test('опрос требует минимум двух непустых вариантов', async () => {
+  const res = await bob.call(
+    'POST',
+    '/api/posts',
+    {
+      promptText: 'Промт с некорректным опросом',
+      modelFamily: 'chatgpt',
+      poll: { question: 'Вопрос без вариантов', options: ['Единственный'] },
+    },
+    { raw: true },
+  );
+  assert.equal(res.status, 400);
+});
+
+test('редактирование поста не сбрасывает голоса, если опрос не менялся', async () => {
+  const created = await bob.call('POST', '/api/posts', {
+    promptText: 'Промт с опросом, который переживёт редактирование',
+    modelFamily: 'chatgpt',
+    poll: { question: 'Оставить как есть?', options: ['Да', 'Нет'] },
+  });
+  const postId = created.post.id;
+  await admin.call('POST', `/api/posts/${postId}/vote`, { optionId: created.post.poll.options[0].id });
+
+  const edited = await bob.call('PATCH', `/api/posts/${postId}`, {
+    description: 'Уточнил описание',
+    poll: { question: 'Оставить как есть?', options: ['Да', 'Нет'] },
+  });
+  assert.equal(edited.post.poll.totalVotes, 1, 'голоса сохраняются');
+
+  const changed = await bob.call('PATCH', `/api/posts/${postId}`, {
+    poll: { question: 'Оставить как есть?', options: ['Да', 'Нет', 'Не знаю'] },
+  });
+  assert.equal(changed.post.poll.options.length, 3);
+  assert.equal(changed.post.poll.totalVotes, 0, 'при смене вариантов голоса сбрасываются');
+});
+
+test('частичное редактирование сохраняет теги и опрос', async () => {
+  const created = await bob.call('POST', '/api/posts', {
+    title: 'Пост для частичного редактирования',
+    promptText: 'Промт, у которого есть и теги, и опрос',
+    modelFamily: 'chatgpt',
+    tags: ['код', 'обучение'],
+    poll: { question: 'Всё ли на месте?', options: ['Да', 'Нет'] },
+  });
+  const postId = created.post.id;
+
+  // В теле запроса только описание — остальное должно уцелеть.
+  const edited = await bob.call('PATCH', `/api/posts/${postId}`, { description: 'Только описание' });
+  assert.equal(edited.post.description, 'Только описание');
+  assert.deepEqual(edited.post.tags, ['код', 'обучение'], 'теги не стёрлись');
+  assert.equal(edited.post.poll?.question, 'Всё ли на месте?', 'опрос не стёрся');
+  assert.equal(edited.post.title, 'Пост для частичного редактирования');
+
+  // Явно переданный пустой опрос убирает его.
+  const removed = await bob.call('PATCH', `/api/posts/${postId}`, { poll: { question: '', options: [] } });
+  assert.equal(removed.post.poll, null);
+});
+
+test('раздел «Сообщения» отдаёт только внутреннюю переписку', async () => {
+  const messages = await admin.call('GET', '/api/notifications?kind=messages');
+  assert.ok(messages.items.length > 0);
+  assert.ok(
+    messages.items.every((n) => ['moderation', 'report', 'system'].includes(n.type)),
+    'в «Сообщениях» нет лайков и репостов',
+  );
+
+  const activity = await admin.call('GET', '/api/notifications?kind=activity');
+  assert.ok(activity.items.every((n) => !['moderation', 'report', 'system'].includes(n.type)));
+});
+
+test('справочники для интерфейса', async () => {
+  const meta = await client()('GET', '/api/meta');
+  assert.ok(meta.categories.length >= 5);
+  assert.ok(meta.sortOptions.some((s) => s.id === 'new'));
+  assert.ok(meta.models.every((m) => m.short && m.color && m.glyph));
+
+  const sidebar = await client()('GET', '/api/sidebar');
+  assert.ok(Array.isArray(sidebar.topCategories));
 });
 
 test('выход закрывает сессию', async () => {

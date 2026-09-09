@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { applyTheme, setUser, state } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, charCounter, confirmDialog, h, toast } from '../dom.js';
+import { icon } from '../icons.js';
 import { openAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
@@ -54,11 +55,12 @@ export async function settingsView() {
       h(
         'div',
         { class: 'empty' },
-        h('div', { class: 'big', text: '🔒' }),
+        h('div', { class: 'big' }, icon('user', { size: 26 })),
         h('h3', { text: 'Нужен вход' }),
         h('p', { text: 'Войдите, чтобы настроить профиль.' }),
         h('button', {
           class: 'btn',
+          style: { marginTop: '14px' },
           text: 'Войти',
           onClick: async () => {
             if (await openAuth()) settingsView();
@@ -77,7 +79,7 @@ export async function settingsView() {
     bannerUrl: state.user.bannerUrl,
   };
 
-  const container = h('div', { style: { padding: '16px' } });
+  const container = h('div', { style: { marginTop: '18px' } });
   main.append(container);
 
   const renderForm = () => {
@@ -130,7 +132,7 @@ export async function settingsView() {
           }
         },
       },
-      h('h3', { style: { marginTop: 0 }, text: 'Профиль' }),
+      h('h3', { class: 'section-title', style: { marginTop: 0 }, text: 'Профиль' }),
       imagePicker({
         label: 'Аватар',
         value: draft.avatarUrl,
@@ -167,7 +169,7 @@ export async function settingsView() {
 
     const themeRow = h(
       'div',
-      { class: 'card', style: { marginTop: '20px' } },
+      { class: 'card', style: { marginTop: '24px' } },
       h('h3', { text: 'Оформление' }),
       h(
         'div',
@@ -176,17 +178,21 @@ export async function settingsView() {
           class: 'grow',
           text: state.theme === 'dark' ? 'Сейчас включена тёмная тема' : 'Сейчас включена светлая тема',
         }),
-        h('button', {
-          class: 'btn ghost small',
-          type: 'button',
-          text: state.theme === 'dark' ? '☀️ Светлая' : '🌙 Тёмная',
-          onClick: () => {
-            applyTheme(state.theme === 'dark' ? 'light' : 'dark');
-            renderForm();
+        h(
+          'button',
+          {
+            class: 'btn ghost small',
+            type: 'button',
+            onClick: () => {
+              applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+              renderForm();
+            },
           },
-        }),
+          icon(state.theme === 'dark' ? 'sun' : 'moon', { size: 15 }),
+          h('span', { text: state.theme === 'dark' ? 'Светлая' : 'Тёмная' }),
+        ),
       ),
-      h('div', { class: 'hint', text: 'Выбор темы сохраняется в вашем аккаунте и на этом устройстве.' }),
+      h('div', { class: 'hint', text: 'Тёмная тема — основной режим ThePrompt. Выбор сохраняется в аккаунте и на этом устройстве.' }),
     );
 
     const accountRow = h(
@@ -236,7 +242,7 @@ export async function settingsView() {
             onClick: async () => {
               const ok = await confirmDialog({
                 title: 'Удалить аккаунт?',
-                message: 'Вместе с аккаунтом удалятся все ваши промты, комментарии и подписки.',
+                message: 'Вместе с аккаунтом удалятся все ваши промпты, комментарии и подписки.',
                 confirmText: 'Удалить навсегда',
                 danger: true,
               });

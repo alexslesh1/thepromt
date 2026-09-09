@@ -39,7 +39,7 @@ function reportCard(report, { onDone }) {
             'div',
             { class: 'modal-head' },
             h('h2', { text: `Жалоба #${report.id}` }),
-            h('button', { class: 'icon-btn', text: '✕', onClick: () => close() }),
+            h('button', { class: 'icon-btn', onClick: () => close(), 'aria-label': 'Закрыть' }, icon('close', { size: 18 })),
           ),
           h('p', { class: 'lead' }, `${data.report.reasonLabel}. Автор жалобы: `, h('b', { text: `@${data.report.reporter.username}` })),
           data.report.details ? h('div', { class: 'quote', text: data.report.details }) : null,
@@ -235,14 +235,14 @@ async function usersTab(container) {
                 h(
                   'div',
                   { class: 'toolbar' },
-                  h('span', { class: 'muted', style: { color: 'var(--text-muted)' }, text: `${user.counts.posts} промтов · ${user.counts.followers} подписчиков` }),
+                  h('span', { class: 'muted', style: { color: 'var(--text-muted)' }, text: `${user.counts.posts} промптов · ${user.counts.followers} подписчиков` }),
                 ),
               ),
             )
-          : [emptyState('🔍', 'Никого не найдено', '')]),
+          : [emptyState('search', 'Никого не найдено', '')]),
       );
     } catch (error) {
-      list.replaceChildren(emptyState('⚠️', 'Ошибка', error.message));
+      list.replaceChildren(emptyState('warn', 'Ошибка', error.message));
     }
   };
 
@@ -252,10 +252,7 @@ async function usersTab(container) {
     timer = setTimeout(load, 300);
   });
 
-  container.replaceChildren(
-    h('div', { style: { padding: '14px 16px', borderBottom: '1px solid var(--border)' } }, search),
-    list,
-  );
+  container.replaceChildren(h('div', { style: { margin: '18px 0 14px' } }, search), list);
   await load();
 }
 
@@ -267,7 +264,7 @@ export async function adminView({ query }) {
   if (!isAdmin()) {
     main.append(
       header({ title: 'Админ-панель' }),
-      emptyState('🛡', 'Доступ только для администраторов', 'Этот раздел закрыт для обычных пользователей.'),
+      emptyState('shieldCheck', 'Доступ только для администраторов', 'Этот раздел закрыт для обычных пользователей.'),
     );
     return;
   }
@@ -286,7 +283,7 @@ export async function adminView({ query }) {
     }),
   );
 
-  const statsBox = h('div', { class: 'admin-stats' });
+  const statsBox = h('div', { class: 'admin-stats', style: { marginTop: '18px' } });
   main.append(statsBox);
 
   api
@@ -294,7 +291,7 @@ export async function adminView({ query }) {
     .then(({ stats }) => {
       const cards = [
         ['Пользователей', stats.users],
-        ['Промтов', stats.posts],
+        ['Промптов', stats.posts],
         ['Комментариев', stats.comments],
         ['Новых жалоб', stats.openReports],
         ['Всего жалоб', stats.totalReports],
@@ -324,7 +321,7 @@ export async function adminView({ query }) {
       if (!data.items.length) {
         content.replaceChildren(
           emptyState(
-            tab === 'open' ? '✅' : '📭',
+            tab === 'open' ? 'check' : 'message',
             tab === 'open' ? 'Новых жалоб нет' : 'Список пуст',
             tab === 'open' ? 'Все обращения обработаны.' : '',
           ),
@@ -335,7 +332,7 @@ export async function adminView({ query }) {
         ...data.items.map((report) => reportCard(report, { onDone: loadReports })),
       );
     } catch (error) {
-      content.replaceChildren(emptyState('⚠️', 'Не удалось загрузить', error.message));
+      content.replaceChildren(emptyState('warn', 'Не удалось загрузить', error.message));
     }
   };
 

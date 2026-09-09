@@ -1,8 +1,8 @@
 {
-  "name": "promptshare",
+  "name": "theprompt",
   "version": "1.0.0",
   "private": true,
-  "description": "PromptShare — социальная сеть для обмена промтами для нейросетей",
+  "description": "ThePrompt — социальная платформа для обмена промптами к нейросетям",
   "type": "module",
   "main": "server/index.js",
   "engines": {

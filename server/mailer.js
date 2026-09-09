@@ -30,18 +30,18 @@ export async function sendMail({ to, subject, text, html }) {
 }
 
 export async function sendOtpEmail({ to, code, ttlMinutes }) {
-  const subject = `PromptShare: код подтверждения ${code}`;
+  const subject = `ThePrompt: код подтверждения ${code}`;
   const text = [
     'Здравствуйте!',
     '',
-    `Ваш одноразовый код для входа в PromptShare: ${code}`,
+    `Ваш одноразовый код для входа в ThePrompt: ${code}`,
     `Код действует ${ttlMinutes} минут.`,
     '',
     'Если вы не запрашивали код — просто проигнорируйте это письмо.',
   ].join('\n');
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px">
-      <h2 style="margin:0 0 12px">PromptShare</h2>
+      <h2 style="margin:0 0 12px">ThePrompt</h2>
       <p style="margin:0 0 16px">Ваш одноразовый код для входа:</p>
       <p style="font-size:32px;letter-spacing:8px;font-weight:700;margin:0 0 16px">${code}</p>
       <p style="color:#666;margin:0 0 8px">Код действует ${ttlMinutes} минут.</p>

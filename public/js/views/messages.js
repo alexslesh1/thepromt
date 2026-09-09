@@ -1,4 +1,7 @@
-/** Уведомления — внутренние сообщения: лайки, комментарии, модерация, жалобы. */
+/**
+ * «Сообщения» — внутренняя переписка платформы: решения модерации,
+ * системные письма и уведомления о жалобах для администраторов.
+ */
 
 import { api } from '../api.js';
 import { refreshBadges, state } from '../state.js';
@@ -8,36 +11,28 @@ import { icon } from '../icons.js';
 import { openAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
-const ICONS = {
-  like: 'heart',
-  comment: 'comment',
-  repost: 'repost',
-  follow: 'user',
-  report: 'flag',
-  moderation: 'shieldCheck',
-  system: 'sparkles',
-};
+const ICONS = { moderation: 'shieldCheck', report: 'flag', system: 'sparkles' };
 
-export async function notificationsView() {
+export async function messagesView() {
   const main = shell();
   main.replaceChildren();
   mountMobileTop(main);
 
   if (!state.user) {
     main.append(
-      header({ title: 'Уведомления' }),
+      header({ title: 'Сообщения', subtitle: 'Внутренняя переписка платформы' }),
       h(
         'div',
         { class: 'empty' },
-        h('div', { class: 'big' }, icon('bell', { size: 26 })),
+        h('div', { class: 'big' }, icon('message', { size: 26 })),
         h('h3', { text: 'Нужен вход' }),
-        h('p', { text: 'Войдите, чтобы видеть отклики на ваши промпты.' }),
+        h('p', { text: 'Войдите, чтобы читать сообщения модерации и системные письма.' }),
         h('button', {
           class: 'btn',
           style: { marginTop: '14px' },
           text: 'Войти',
           onClick: async () => {
-            if (await openAuth()) notificationsView();
+            if (await openAuth()) messagesView();
           },
         }),
       ),
@@ -45,21 +40,25 @@ export async function notificationsView() {
     return;
   }
 
-  const list = h('div', {}, spinner('Загружаем уведомления…'));
+  const list = h('div', {}, spinner('Загружаем сообщения…'));
 
   main.append(
-    header({ title: 'Уведомления', subtitle: 'Лайки, репосты, ответы и новые подписчики' }),
+    header({
+      title: 'Сообщения',
+      subtitle: 'Решения модерации, жалобы и системные уведомления',
+      pill: { icon: 'shieldCheck', label: 'Внутренняя переписка' },
+    }),
     h(
       'div',
       { style: { display: 'flex', justifyContent: 'flex-end', margin: '18px 0 14px' } },
       h('button', {
         class: 'btn ghost small',
-        text: 'Отметить всё прочитанным',
+        text: 'Отметить прочитанным',
         onClick: async () => {
           try {
             await api.readNotifications();
             await refreshBadges();
-            notificationsView();
+            messagesView();
           } catch (error) {
             toast(error.message, 'error');
           }
@@ -70,10 +69,10 @@ export async function notificationsView() {
   );
 
   try {
-    const data = await api.notifications({ kind: 'activity', limit: 50 });
+    const data = await api.notifications({ kind: 'messages', limit: 50 });
     if (!data.items.length) {
       list.replaceChildren(
-        emptyState('bell', 'Уведомлений пока нет', 'Здесь появятся лайки, комментарии, репосты и новые подписчики.'),
+        emptyState('message', 'Сообщений пока нет', 'Здесь появятся решения модерации и системные письма.'),
       );
       return;
     }
@@ -85,13 +84,11 @@ export async function notificationsView() {
           {
             class: `notif${item.read ? '' : ' unread'}`,
             onClick: async () => {
-              if (!item.read) {
-                api.readNotifications(item.id).then(refreshBadges).catch(() => {});
-              }
+              if (!item.read) api.readNotifications(item.id).then(refreshBadges).catch(() => {});
               if (item.link) navigate(item.link);
             },
           },
-          h('div', { class: 'ico' }, icon(ICONS[item.type] ?? 'bell', { size: 18 })),
+          h('div', { class: 'ico' }, icon(ICONS[item.type] ?? 'message', { size: 18 })),
           item.actor ? avatar(item.actor, 'sm', { link: false }) : null,
           h(
             'div',

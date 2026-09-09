@@ -14,7 +14,11 @@ router.get(
   wrap(async (req, res) => {
     const limit = clampInt(req.query.limit, { min: 1, max: 50, fallback: config.feed.pageSize });
     const page = clampInt(req.query.page, { min: 1, max: 1000, fallback: 1 });
-    const items = listNotifications(req.user.id, { limit: limit + 1, offset: (page - 1) * limit });
+    const items = listNotifications(req.user.id, {
+      limit: limit + 1,
+      offset: (page - 1) * limit,
+      kind: req.query.kind === 'messages' ? 'messages' : req.query.kind === 'activity' ? 'activity' : 'all',
+    });
     const hasMore = items.length > limit;
     res.json({
       items: items.slice(0, limit),

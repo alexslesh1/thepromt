@@ -11,6 +11,8 @@ import { postView } from './views/post.js';
 import { profileView } from './views/profile.js';
 import { settingsView } from './views/settings.js';
 import { notificationsView } from './views/notifications.js';
+import { messagesView } from './views/messages.js';
+import { staticView } from './views/static.js';
 import { adminView } from './views/admin.js';
 import { openAuth } from './components/auth.js';
 import { openComposer } from './components/composer.js';
@@ -21,7 +23,12 @@ route('/post/:id', postView);
 route('/u/:username', profileView);
 route('/settings', settingsView);
 route('/notifications', notificationsView);
+route('/messages', messagesView);
 route('/admin', adminView);
+
+for (const page of ['about', 'rules', 'privacy', 'terms']) {
+  route(`/${page}`, staticView(page));
+}
 
 route('/compose', async () => {
   navigate('/', { replace: true });
@@ -39,10 +46,10 @@ setNotFound(async () => {
   mountMobileTop(main);
   main.append(
     header({ title: 'Страница не найдена', back: true }),
-    emptyState('🧭', 'Такой страницы нет', 'Проверьте адрес или вернитесь на главную.'),
+    emptyState('search', 'Такой страницы нет', 'Проверьте адрес или вернитесь на главную.'),
     h(
       'div',
-      { style: { textAlign: 'center', paddingBottom: '30px' } },
+      { style: { textAlign: 'center', padding: '18px 0 30px' } },
       h('button', { class: 'btn', text: 'На главную', onClick: () => navigate('/') }),
     ),
   );
@@ -58,11 +65,10 @@ async function boot() {
     document.getElementById('app').replaceChildren(
       h(
         'div',
-        { class: 'empty' },
-        h('div', { class: 'big', text: '🔌' }),
+        { class: 'empty', style: { margin: '80px auto', maxWidth: '420px' } },
         h('h3', { text: 'Сервер недоступен' }),
         h('p', { text: error.message }),
-        h('button', { class: 'btn', text: 'Обновить', onClick: () => location.reload() }),
+        h('button', { class: 'btn', style: { marginTop: '14px' }, text: 'Обновить', onClick: () => location.reload() }),
       ),
     );
     return;

@@ -1,4 +1,4 @@
-/** Обзор: поиск по промтам и людям. */
+/** Обзор: поиск по промптам и людям. */
 
 import { api } from '../api.js';
 import { navigate } from '../router.js';
@@ -16,7 +16,7 @@ export async function exploreView({ query }) {
 
   const input = h('input', {
     type: 'search',
-    placeholder: 'Промты, теги, модели, авторы…',
+    placeholder: 'Промпты, теги, модели, авторы…',
     value: initial,
     'aria-label': 'Поиск',
     onKeydown: (event) => {
@@ -27,7 +27,7 @@ export async function exploreView({ query }) {
   });
 
   main.append(
-    header({ title: 'Обзор', subtitle: 'Поиск промтов, тегов, моделей и авторов' }),
+    header({ title: 'Обзор', subtitle: 'Поиск промптов, тегов, моделей и авторов' }),
     h(
       'div',
       { style: { padding: '14px 16px', borderBottom: '1px solid var(--border)' } },
@@ -37,7 +37,7 @@ export async function exploreView({ query }) {
 
   if (!initial) {
     main.append(
-      emptyState('🔍', 'Что ищем?', 'Например: «код ревью», «midjourney», «маркетинг» или ник автора.'),
+      emptyState('search', 'Что ищем?', 'Например: «киберпанк», «midjourney», «маркетинг» или ник автора.'),
     );
     input.focus();
     return;
@@ -54,7 +54,7 @@ export async function exploreView({ query }) {
         h(
           'div',
           { style: { padding: '12px 16px 4px' } },
-          h('h3', { style: { margin: '0 0 4px', fontSize: '16px' }, text: 'Авторы' }),
+          h('h3', { class: 'section-title', style: { margin: '0 0 4px' }, text: 'Авторы' }),
         ),
         ...users.map((user) =>
           h(
@@ -81,7 +81,7 @@ export async function exploreView({ query }) {
   main.append(
     feedList({
       load: (page) => api.feed({ q: initial, page }),
-      emptyIcon: '🤷',
+      emptyIcon: 'search',
       emptyTitle: 'Ничего не нашлось',
       emptyText: 'Попробуйте другой запрос или уберите часть слов.',
     }),

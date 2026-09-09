@@ -4,8 +4,16 @@ import { config } from './config.js';
 import { closeDb } from './db.js';
 import { attachUser } from './auth.js';
 import { mailerMode, devCodesEnabled } from './mailer.js';
-import { DIFFICULTIES, LIMITS, MODEL_FAMILIES, REPORT_REASONS, SUGGESTED_TAGS } from './constants.js';
-import { suggestedUsers, topModels, trendingTags } from './store.js';
+import {
+  CATEGORIES,
+  DIFFICULTIES,
+  LIMITS,
+  MODEL_FAMILIES,
+  REPORT_REASONS,
+  SORT_OPTIONS,
+  SUGGESTED_TAGS,
+} from './constants.js';
+import { suggestedUsers, topCategories, topModels, trendingTags } from './store.js';
 import { HttpError, wrap } from './util.js';
 import { router as authRouter, cleanupExpired } from './routes/auth.js';
 import { commentsRouter, router as postsRouter } from './routes/posts.js';
@@ -58,7 +66,7 @@ app.use(attachUser);
  */
 app.use('/api', (req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  if (req.get('x-requested-with') === 'PromptShare') return next();
+  if (req.get('x-requested-with') === 'ThePrompt') return next();
   res.status(403).json({ error: 'Некорректный источник запроса' });
 });
 
@@ -68,6 +76,8 @@ app.get('/api/meta', (req, res) => {
   res.json({
     models: MODEL_FAMILIES,
     difficulties: DIFFICULTIES,
+    categories: CATEGORIES,
+    sortOptions: SORT_OPTIONS,
     reportReasons: REPORT_REASONS,
     suggestedTags: SUGGESTED_TAGS,
     limits: LIMITS,
@@ -88,8 +98,9 @@ app.get(
   '/api/sidebar',
   wrap(async (req, res) => {
     res.json({
-      trendingTags: trendingTags(8),
-      topModels: topModels(6),
+      trendingTags: trendingTags(12),
+      topModels: topModels(4),
+      topCategories: topCategories(6),
       suggestedUsers: req.user ? suggestedUsers(req.user.id, 3) : suggestedUsers(0, 3),
     });
   }),
@@ -143,7 +154,7 @@ if (process.argv[1] && import.meta.url === `file://${path.resolve(process.argv[1
   setInterval(cleanupExpired, 60 * 60 * 1000).unref();
 
   const server = app.listen(config.port, () => {
-    console.log(`PromptShare запущен: http://localhost:${config.port}`);
+    console.log(`ThePrompt запущен: http://localhost:${config.port}`);
     console.log(`Режим: ${config.env}; почта: ${mailerMode}${devCodesEnabled ? ' (код придёт в ответе API и в консоль)' : ''}`);
   });
 

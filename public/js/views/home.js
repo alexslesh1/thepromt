@@ -1,11 +1,12 @@
-/** Главная страница: лента промтов с вкладками и фильтрами. */
+/** Главная: лента промптов с вкладками, фильтрами и сортировкой. */
 
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { navigate } from '../router.js';
-import { h } from '../dom.js';
+import { emptyState, h } from '../dom.js';
+import { icon } from '../icons.js';
 import { feedList } from '../components/post.js';
-import { inlineComposer } from '../components/composer.js';
+import { inlineComposer, selectWrap } from '../components/composer.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
 const TABS = [
@@ -14,50 +15,64 @@ const TABS = [
   { id: 'following', label: 'Подписки' },
 ];
 
-/** Панель фильтров по модели и уровню сложности. */
-function filterBar(query, onChange) {
-  const modelSelect = h(
-    'select',
-    { class: 'select', onChange: (e) => onChange('model', e.target.value) },
-    h('option', { value: '', text: 'Все модели' }),
-    (state.meta?.models ?? []).map((model) =>
-      h('option', { value: model.id, text: model.label, selected: query.get('model') === model.id }),
-    ),
+/** Селекторы «Все модели / Любой уровень / Все категории / Сначала свежее». */
+function filterBar(query, setParam, { showSort = true } = {}) {
+  const build = (name, allLabel, items, key) => {
+    const select = h(
+      'select',
+      { class: 'select', 'aria-label': name, onChange: (event) => setParam(key, event.target.value) },
+      allLabel ? h('option', { value: '', text: allLabel }) : null,
+      items.map((item) =>
+        h('option', { value: item.id, text: item.label, selected: (query.get(key) ?? '') === item.id }),
+      ),
+    );
+    return selectWrap(select);
+  };
+
+  const bar = h(
+    'div',
+    { class: 'filter-bar' },
+    build('Модель', 'Все модели', state.meta?.models ?? [], 'model'),
+    build('Уровень', 'Любой уровень', state.meta?.difficulties ?? [], 'difficulty'),
+    build('Категория', 'Все категории', state.meta?.categories ?? [], 'category'),
   );
 
-  const difficultySelect = h(
-    'select',
-    { class: 'select', onChange: (e) => onChange('difficulty', e.target.value) },
-    h('option', { value: '', text: 'Любой уровень' }),
-    (state.meta?.difficulties ?? []).map((level) =>
-      h('option', {
-        value: level.id,
-        text: level.label,
-        selected: query.get('difficulty') === level.id,
-      }),
-    ),
-  );
+  if (showSort) {
+    const sort = h(
+      'select',
+      { class: 'select', 'aria-label': 'Сортировка', onChange: (event) => setParam('sort', event.target.value) },
+      (state.meta?.sortOptions ?? []).map((option) =>
+        h('option', {
+          value: option.id,
+          text: option.label,
+          selected: (query.get('sort') ?? 'new') === option.id,
+        }),
+      ),
+    );
+    const wrap = selectWrap(sort);
+    wrap.classList.add('sort');
+    bar.append(wrap);
+  }
 
-  const activeTag = query.get('tag');
-  const activeQuery = query.get('q');
+  return bar;
+}
+
+/** Активные фильтры отдельной строкой — их видно и легко сбросить. */
+function activeFilters(query) {
+  const chips = [];
+  const add = (text) => chips.push(h('span', { class: 'chip static', text }));
+
+  const tag = query.get('tag');
+  const search = query.get('q');
+  if (tag) add(`#${tag}`);
+  if (search) add(`«${search}»`);
+  if (!chips.length) return null;
 
   return h(
     'div',
-    { class: 'composer', style: { borderBottomWidth: '1px', paddingBottom: '12px' } },
-    h('div', { class: 'row' }, modelSelect, difficultySelect),
-    activeTag || activeQuery
-      ? h(
-          'div',
-          { class: 'badges', style: { marginTop: '10px' } },
-          activeTag ? h('span', { class: 'badge-chip tag static', text: activeTag }) : null,
-          activeQuery ? h('span', { class: 'badge-chip static', text: `«${activeQuery}»` }) : null,
-          h('button', {
-            class: 'badge-chip',
-            text: '✕ Сбросить фильтры',
-            onClick: () => navigate('/'),
-          }),
-        )
-      : null,
+    { class: 'active-filters' },
+    ...chips,
+    h('button', { class: 'chip', onClick: () => navigate('/') }, icon('close', { size: 13 }), h('span', { text: 'Сбросить' })),
   );
 }
 
@@ -80,6 +95,8 @@ export async function homeView({ query }) {
   main.append(
     header({
       title: 'Главная',
+      subtitle: 'Открывайте новые промпты, идеи и людей',
+      pill: { icon: 'users', label: 'Сообщество для AI-креаторов' },
       tabs: {
         items: TABS,
         active: tab,
@@ -90,42 +107,38 @@ export async function homeView({ query }) {
 
   if (tab === 'following' && !state.user) {
     main.append(
-      h(
-        'div',
-        { class: 'empty' },
-        h('div', { class: 'big', text: '🔒' }),
-        h('h3', { text: 'Лента подписок доступна после входа' }),
-        h('p', { text: 'Войдите, чтобы видеть промты авторов, на которых вы подписаны.' }),
-      ),
+      emptyState('users', 'Лента подписок доступна после входа', 'Войдите, чтобы видеть промпты авторов, на которых вы подписаны.'),
     );
     return;
   }
 
-  main.append(inlineComposer({ onCreated: () => list.reload() }));
-  main.append(filterBar(query, setParam));
-
-  const params = {
-    tab,
-    model: query.get('model') ?? '',
-    difficulty: query.get('difficulty') ?? '',
-    tag: query.get('tag') ?? '',
-    q: query.get('q') ?? '',
-  };
-
   const list = feedList({
-    load: (page) => api.feed({ ...params, page }),
-    emptyIcon: tab === 'following' ? '👥' : '✨',
-    emptyTitle: tab === 'following' ? 'Здесь появятся промты ваших подписок' : 'Пока нет промтов',
+    load: (page) =>
+      api.feed({
+        tab,
+        model: query.get('model') ?? '',
+        difficulty: query.get('difficulty') ?? '',
+        category: query.get('category') ?? '',
+        tag: query.get('tag') ?? '',
+        q: query.get('q') ?? '',
+        sort: query.get('sort') ?? '',
+        page,
+      }),
+    emptyIcon: tab === 'following' ? 'users' : 'sparkles',
+    emptyTitle: tab === 'following' ? 'Здесь появятся промпты ваших подписок' : 'Пока нет промптов',
     emptyText:
       tab === 'following'
         ? 'Подпишитесь на авторов — их публикации соберутся в этой ленте.'
-        : 'Опубликуйте первый промт или измените фильтры.',
+        : 'Опубликуйте первый промпт или измените фильтры.',
   });
+
+  main.append(inlineComposer({ onCreated: () => list.reload() }));
+  main.append(filterBar(query, setParam, { showSort: tab !== 'popular' }));
+  const filters = activeFilters(query);
+  if (filters) main.append(filters);
   main.append(list);
 
   const onCreated = () => list.reload();
   window.addEventListener('ps:post-created', onCreated);
-  main.addEventListener('ps:unmount', () => window.removeEventListener('ps:post-created', onCreated), {
-    once: true,
-  });
+  main.addEventListener('ps:unmount', () => window.removeEventListener('ps:post-created', onCreated), { once: true });
 }

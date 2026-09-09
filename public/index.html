@@ -3,23 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>PromptShare — соцсеть для обмена промтами</title>
-  <meta name="description" content="PromptShare — публикуйте, обсуждайте и находите промты для ChatGPT, Claude, Midjourney, DALL·E, Stable Diffusion и других нейросетей.">
+  <title>ThePrompt — сообщество для обмена AI-промптами</title>
+  <meta name="description" content="ThePrompt — социальная платформа для обмена промптами к нейросетям: ChatGPT, Claude, Midjourney, DALL·E, Stable Diffusion. Делись идеями. Создавай больше.">
   <meta name="color-scheme" content="dark light">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+  <meta name="theme-color" content="#151515">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='18' fill='%231683FF'/><path d='M22 46V18h13a9 9 0 0 1 0 18h-8' stroke='white' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <!--
+    Inter и JetBrains Mono подключаются с Google Fonts. Если сеть закрыта,
+    интерфейс не ломается: в styles.css у обоих шрифтов есть системный
+    запасной стек, а сама загрузка не блокирует отрисовку.
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" media="print" onload="this.media='all'"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&family=JetBrains+Mono:wght@400;500&display=swap">
+  <noscript>
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&family=JetBrains+Mono:wght@400;500&display=swap">
+  </noscript>
   <link rel="stylesheet" href="/css/styles.css">
   <script>
     // Тема выставляется до первой отрисовки, чтобы не было вспышки.
+    // По умолчанию — тёмная: это основной режим интерфейса.
     try {
       const saved = localStorage.getItem('ps-theme');
-      if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
-      else if (window.matchMedia('(prefers-color-scheme: light)').matches) document.documentElement.dataset.theme = 'light';
+      if (saved === 'light') document.documentElement.dataset.theme = 'light';
     } catch (_) {}
   </script>
 </head>
 <body>
   <div id="app" class="app">
-    <div class="boot">Загружаем PromptShare…</div>
+    <div class="boot">Загружаем ThePrompt…</div>
   </div>
   <div id="modal-root"></div>
   <div id="toast-root" class="toasts" role="status" aria-live="polite"></div>

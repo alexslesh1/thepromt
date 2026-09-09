@@ -3,33 +3,33 @@
  * Запуск: npm run seed  (существующие данные не удаляются, дубликаты пропускаются)
  */
 import { config } from './config.js';
-import { db, get, run, transaction } from './db.js';
+import { all, db, get, run, transaction } from './db.js';
 import { notifyAdmins } from './store.js';
 
 const USERS = [
   {
-    email: 'admin@promptshare.dev',
+    email: 'admin@theprompt.dev',
     username: 'admin',
-    displayName: 'Команда PromptShare',
-    bio: 'Модерируем сообщество и следим за качеством промтов.',
+    displayName: 'Команда ThePrompt',
+    bio: 'Модерируем сообщество и следим за качеством промптов.',
     role: 'admin',
   },
   {
-    email: 'nika@promptshare.dev',
+    email: 'nika@theprompt.dev',
     username: 'nika_prompts',
     displayName: 'Ника Ветрова',
     bio: 'Промт-инженер. Пишу про копирайтинг и маркетинг в ИИ.',
     role: 'user',
   },
   {
-    email: 'dev@promptshare.dev',
+    email: 'dev@theprompt.dev',
     username: 'code_wizard',
     displayName: 'Артём Кузнецов',
     bio: 'Бэкенд-разработчик. Промты для код-ревью, рефакторинга и тестов.',
     role: 'user',
   },
   {
-    email: 'art@promptshare.dev',
+    email: 'art@theprompt.dev',
     username: 'pixel_muse',
     displayName: 'Лея Соколова',
     bio: 'Диджитал-художница. Midjourney, SDXL, FLUX.',
@@ -40,6 +40,8 @@ const USERS = [
 const POSTS = [
   {
     author: 'nika_prompts',
+    title: 'Сокращаем корпоративный текст на треть',
+    category: 'text',
     promptText: `Ты — редактор с 10-летним опытом в B2B-копирайтинге.
 Перепиши текст ниже так, чтобы он стал на 30% короче, но сохранил все факты и цифры.
 
@@ -59,6 +61,10 @@ const POSTS = [
   },
   {
     author: 'code_wizard',
+    title: 'Структурированное код-ревью с приоритетами',
+    category: 'code',
+    pollQuestion: 'Какой формат ревью удобнее?',
+    pollOptions: ['Списком по приоритетам', 'Комментариями по строкам', 'Сводкой в конце'],
     promptText: `Действуй как senior-инженер, который проводит ревью пул-реквеста.
 
 Проанализируй код ниже и верни отчёт в формате:
@@ -82,6 +88,8 @@ const POSTS = [
   },
   {
     author: 'pixel_muse',
+    title: 'Кинематографичный портрет мастера',
+    category: 'images',
     promptText: `cinematic portrait of an elderly craftsman in a workshop, warm golden hour light through dusty window, shallow depth of field, 85mm lens, f/1.8, film grain, muted earth tones --ar 4:5 --style raw --v 6.1`,
     modelFamily: 'midjourney',
     modelVersion: 'Midjourney v6.1',
@@ -91,6 +99,8 @@ const POSTS = [
   },
   {
     author: 'nika_prompts',
+    title: 'Контент-план на месяц за одну минуту',
+    category: 'marketing',
     promptText: `Ты — маркетолог-аналитик. Составь контент-план на месяц для {НИША}.
 
 Формат ответа — таблица:
@@ -109,6 +119,8 @@ const POSTS = [
   },
   {
     author: 'code_wizard',
+    title: 'Полный набор тестов по коду функции',
+    category: 'code',
     promptText: `Напиши покрывающие тесты для функции ниже на {ФРЕЙМВОРК}.
 
 Обязательно покрой:
@@ -130,6 +142,8 @@ const POSTS = [
   },
   {
     author: 'pixel_muse',
+    title: 'Изометрический остров в стиле пластилина',
+    category: 'images',
     promptText: `isometric miniature island, tiny lighthouse, pastel palette, soft studio lighting, clay render style, high detail, centered composition, white background
 
 Negative prompt: text, watermark, blurry, extra objects, harsh shadows
@@ -140,6 +154,32 @@ Steps: 30, CFG: 6.5, Sampler: DPM++ 2M Karras, Size: 1024x1024`,
     difficulty: 'beginner',
     description: 'Милый изометрический остров в стиле пластилина',
     tags: ['картинки', 'дизайн'],
+  },
+  {
+    author: 'pixel_muse',
+    title: 'Кинематографичная сцена в киберпанк-стиле',
+    category: 'images',
+    promptText:
+      'a cinematic cyberpunk city at night, rain, neon lights, reflections on wet streets, moody atmosphere, ultra detailed, 8k, dramatic lighting',
+    modelFamily: 'midjourney',
+    modelVersion: 'Midjourney v6.1',
+    difficulty: 'intermediate',
+    description:
+      'Промпт для генерации атмосферной сцены ночного города с неоновыми огнями, дождем и отражениями. Подходит для Midjourney и SDXL.',
+    tags: ['киберпанк', 'город', 'атмосфера', 'cinematic', 'ии-арт'],
+  },
+  {
+    author: 'nika_prompts',
+    title: 'Портрет в аниме-стиле',
+    category: 'images',
+    promptText:
+      'anime portrait, detailed face, soft lighting, expressive eyes, flowing hair, background bokeh, high detail, masterpiece, anime style',
+    modelFamily: 'stable-diffusion',
+    modelVersion: 'SDXL 1.0',
+    difficulty: 'beginner',
+    description:
+      'Детализированный промпт для создания аниме-портрета с мягким освещением, выразительными глазами и атмосферным фоном.',
+    tags: ['аниме', 'портрет', 'персонаж', 'stablediffusion', 'фотореализм'],
   },
 ];
 
@@ -172,10 +212,15 @@ function seed() {
 
     const result = run(
       `INSERT INTO posts
-         (author_id, prompt_text, model_family, model_version, difficulty, description, example_text)
-       VALUES ($authorId, $promptText, $modelFamily, $modelVersion, $difficulty, $description, $exampleText)`,
+         (author_id, title, category, poll_question, prompt_text, model_family, model_version,
+          difficulty, description, example_text)
+       VALUES ($authorId, $title, $category, $pollQuestion, $promptText, $modelFamily, $modelVersion,
+               $difficulty, $description, $exampleText)`,
       {
         authorId: author.id,
+        title: data.title ?? '',
+        category: data.category ?? 'other',
+        pollQuestion: data.pollQuestion ?? '',
         promptText: data.promptText,
         modelFamily: data.modelFamily,
         modelVersion: data.modelVersion,
@@ -188,13 +233,32 @@ function seed() {
     for (const tag of data.tags ?? []) {
       run('INSERT OR IGNORE INTO post_tags (post_id, tag) VALUES ($postId, $tag)', { postId, tag });
     }
+    (data.pollOptions ?? []).forEach((option, index) => {
+      run('INSERT INTO poll_options (post_id, position, text) VALUES ($postId, $position, $text)', {
+        postId,
+        position: index,
+        text: option,
+      });
+    });
     created += 1;
 
-    // Немного активности: лайки и подписки от других участников.
+    // Немного активности: лайки, сохранения и голоса от других участников.
+    const options = all('SELECT id FROM poll_options WHERE post_id = $postId', { postId });
     for (const other of users.values()) {
       if (other.id === author.id) continue;
       if (Math.random() < 0.6) {
         run('INSERT OR IGNORE INTO likes (user_id, post_id) VALUES ($u, $p)', { u: other.id, p: postId });
+      }
+      if (Math.random() < 0.35) {
+        run('INSERT OR IGNORE INTO bookmarks (user_id, post_id) VALUES ($u, $p)', { u: other.id, p: postId });
+      }
+      if (options.length && Math.random() < 0.7) {
+        const option = options[Math.floor(Math.random() * options.length)];
+        run(
+          `INSERT INTO poll_votes (post_id, option_id, user_id) VALUES ($p, $o, $u)
+           ON CONFLICT(post_id, user_id) DO UPDATE SET option_id = $o`,
+          { p: postId, o: option.id, u: other.id },
+        );
       }
     }
   }
@@ -244,7 +308,7 @@ function seed() {
 
 const result = transaction(seed);
 console.log(`База: ${config.dbFile}`);
-console.log(`Пользователей: ${result.users}, новых промтов: ${result.posts}`);
+console.log(`Пользователей: ${result.users}, новых промптов: ${result.posts}`);
 console.log('Войти можно любым email из списка — код придёт в консоль сервера:');
 for (const user of USERS) console.log(`  ${user.email}  (@${user.username}${user.role === 'admin' ? ', админ' : ''})`);
 db.close();

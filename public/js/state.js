@@ -6,10 +6,11 @@ const listeners = new Set();
 
 export const state = {
   user: null,          // текущий пользователь (privateUser) или null
-  meta: null,          // справочники моделей, уровней, причин жалоб
+  meta: null,          // справочники моделей, уровней, категорий, причин жалоб
   theme: document.documentElement.dataset.theme || 'dark',
-  unread: 0,
-  openReports: 0,
+  unread: 0,           // непрочитанные уведомления
+  unreadMessages: 0,   // непрочитанные внутренние сообщения
+  openReports: 0,      // открытые жалобы (для админа)
 };
 
 export function subscribe(listener) {
@@ -24,12 +25,14 @@ export function emit() {
 export function setUser(user) {
   state.user = user;
   state.unread = user?.unreadNotifications ?? 0;
+  state.unreadMessages = user?.unreadMessages ?? 0;
   state.openReports = user?.openReports ?? 0;
   if (user?.theme && user.theme !== state.theme) applyTheme(user.theme, { persist: false });
   emit();
 }
 
 export function applyTheme(theme, { persist = true } = {}) {
+  if (theme === state.theme) return;
   state.theme = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = state.theme;
   try {
@@ -60,6 +63,7 @@ export async function refreshBadges() {
     const user = (await api.me()).user;
     if (user) {
       state.unread = user.unreadNotifications;
+      state.unreadMessages = user.unreadMessages;
       state.openReports = user.openReports;
       emit();
     }

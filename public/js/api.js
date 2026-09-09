@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 async function request(method, path, body, options = {}) {
-  const headers = { 'X-Requested-With': 'PromptShare' };
+  const headers = { 'X-Requested-With': 'ThePrompt' };
   let payload = body;
 
   if (body !== undefined && !(body instanceof FormData)) {
@@ -69,6 +69,8 @@ export const api = {
   deletePost: (id) => request('DELETE', `/api/posts/${id}`),
   like: (id) => request('POST', `/api/posts/${id}/like`),
   repost: (id, comment = '') => request('POST', `/api/posts/${id}/repost`, { comment }),
+  bookmark: (id) => request('POST', `/api/posts/${id}/bookmark`),
+  vote: (id, optionId) => request('POST', `/api/posts/${id}/vote`, { optionId }),
   likers: (id) => request('GET', `/api/posts/${id}/likes`),
   comments: (id) => request('GET', `/api/posts/${id}/comments`),
   comment: (id, body, parentId = null) => request('POST', `/api/posts/${id}/comments`, { body, parentId }),

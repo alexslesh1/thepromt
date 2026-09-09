@@ -1,4 +1,4 @@
-/** Страница поста: сам промт и тред обсуждения. */
+/** Страница поста: сам промпт и тред обсуждения. */
 
 import { api } from '../api.js';
 import { state } from '../state.js';
@@ -100,7 +100,7 @@ function commentForm({ postId, parentId = null, onChanged, compact = false }) {
     class: 'textarea',
     rows: compact ? 2 : 3,
     maxlength: state.meta?.limits?.comment ?? 1000,
-    placeholder: parentId ? 'Ваш ответ…' : 'Что думаете об этом промте?',
+    placeholder: parentId ? 'Ваш ответ…' : 'Что думаете об этом промпте?',
   });
 
   const submit = h('button', { class: 'btn small', text: parentId ? 'Ответить' : 'Отправить', type: 'submit' });
@@ -140,9 +140,9 @@ export async function postView({ params }) {
   const main = shell();
   main.replaceChildren();
   mountMobileTop(main);
-  main.append(header({ title: 'Промт', back: true }));
+  main.append(header({ title: 'Промпт', back: true }));
 
-  const body = h('div', {}, spinner('Загружаем промт…'));
+  const body = h('div', { style: { marginTop: '18px' } }, spinner('Загружаем промпт…'));
   main.append(body);
 
   let data;
@@ -150,7 +150,7 @@ export async function postView({ params }) {
     data = await api.post(params.id);
   } catch (error) {
     body.replaceChildren(
-      emptyState('🕳', 'Пост не найден', error.message),
+      emptyState('search', 'Пост не найден', error.message),
       h(
         'div',
         { style: { textAlign: 'center', paddingBottom: '24px' } },
@@ -167,7 +167,7 @@ export async function postView({ params }) {
         ? comments.map((comment) =>
             commentNode(comment, { postId: data.post.id, onChanged: renderComments }),
           )
-        : [emptyState('💬', 'Комментариев пока нет', 'Станьте первым, кто обсудит этот промт.')]),
+        : [emptyState('comment', 'Комментариев пока нет', 'Станьте первым, кто обсудит этот промпт.')]),
     );
   };
 

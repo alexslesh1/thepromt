@@ -53,6 +53,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS posts (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   author_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title          TEXT NOT NULL DEFAULT '',
+  category       TEXT NOT NULL DEFAULT 'other',
+  poll_question  TEXT NOT NULL DEFAULT '',
   prompt_text    TEXT NOT NULL,
   model_family   TEXT NOT NULL,
   model_version  TEXT NOT NULL DEFAULT '',
@@ -94,6 +97,31 @@ CREATE TABLE IF NOT EXISTS reposts (
 );
 CREATE INDEX IF NOT EXISTS idx_reposts_post ON reposts(post_id);
 CREATE INDEX IF NOT EXISTS idx_reposts_user ON reposts(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS poll_options (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id  INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  text     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_poll_options_post ON poll_options(post_id, position);
+
+CREATE TABLE IF NOT EXISTS poll_votes (
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  option_id  INTEGER NOT NULL REFERENCES poll_options(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (post_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_option ON poll_votes(option_id);
 
 CREATE TABLE IF NOT EXISTS comments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +172,23 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, crea
 `;
 
 db.exec(SCHEMA);
+
+/**
+ * Догоняющие миграции: добавляют колонки в базы, созданные предыдущими
+ * версиями схемы. CREATE TABLE IF NOT EXISTS их не добавит.
+ */
+function addColumnIfMissing(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+addColumnIfMissing('posts', 'title', "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('posts', 'category', "TEXT NOT NULL DEFAULT 'other'");
+addColumnIfMissing('posts', 'poll_question', "TEXT NOT NULL DEFAULT ''");
+
+// Индексы по новым колонкам — только после того, как колонки точно существуют.
+db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');
 
 /* --- Помощники запросов --- */
 

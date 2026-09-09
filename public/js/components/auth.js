@@ -3,6 +3,7 @@
 import { api } from '../api.js';
 import { setUser, state } from '../state.js';
 import { frag, h, modal, toast } from '../dom.js';
+import { icon } from '../icons.js';
 
 /** Экран 1: ввод email. */
 function emailStep(close, prefill = '') {
@@ -44,8 +45,8 @@ function emailStep(close, prefill = '') {
     h(
       'div',
       { class: 'modal-head' },
-      h('h2', { text: 'Вход в PromptShare' }),
-      h('button', { class: 'icon-btn', text: '✕', onClick: () => close(), 'aria-label': 'Закрыть' }),
+      h('h2', { text: 'Вход в ThePrompt' }),
+      h('button', { class: 'icon-btn', onClick: () => close(), 'aria-label': 'Закрыть' }, icon('close', { size: 18 })),
     ),
     h('p', {
       class: 'lead',
@@ -130,7 +131,7 @@ function codeStep(close, requested) {
       'div',
       { class: 'modal-head' },
       h('h2', { text: 'Введите код' }),
-      h('button', { class: 'icon-btn', text: '✕', onClick: () => close(), 'aria-label': 'Закрыть' }),
+      h('button', { class: 'icon-btn', onClick: () => close(), 'aria-label': 'Закрыть' }, icon('close', { size: 18 })),
     ),
     h('p', { class: 'lead' }, 'Мы отправили код на ', h('b', { text: requested.email })),
     form,
@@ -167,7 +168,8 @@ function profileStep(close) {
     checkTimer = setTimeout(async () => {
       try {
         const result = await api.usernameAvailable(value);
-        hint.textContent = result.available ? '✓ Никнейм свободен' : `✕ ${result.reason}`;
+        hint.textContent = result.available ? 'Никнейм свободен' : result.reason;
+        hint.style.color = result.available ? 'var(--repost)' : 'var(--danger)';
       } catch {
         /* подсказка не критична */
       }
@@ -215,7 +217,7 @@ function profileStep(close) {
 
   return frag(
     h('div', { class: 'modal-head' }, h('h2', { text: 'Создайте профиль' })),
-    h('p', { class: 'lead', text: 'Под этим именем вас увидят другие участники.' }),
+    h('p', { class: 'lead', text: 'Под этим именем вас увидят другие участники ThePrompt.' }),
     form,
   );
 }

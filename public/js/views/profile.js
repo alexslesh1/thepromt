@@ -1,9 +1,10 @@
-/** Профиль пользователя: баннер, аватар, счётчики и лента промтов. */
+/** Профиль пользователя: баннер, аватар, счётчики и лента промптов. */
 
 import { api } from '../api.js';
 import { isAdmin } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, emptyState, frag, h, modal, plural, pluralWord, promptDialog, spinner, toast } from '../dom.js';
+import { icon } from '../icons.js';
 import { feedList } from '../components/post.js';
 import { requireAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
@@ -45,7 +46,7 @@ async function showPeople(username, kind) {
         'div',
         { class: 'modal-head' },
         h('h2', { text: title }),
-        h('button', { class: 'icon-btn', text: '✕', onClick: () => close() }),
+        h('button', { class: 'icon-btn', onClick: () => close(), 'aria-label': 'Закрыть' }, icon('close', { size: 18 })),
       ),
       list,
     );
@@ -82,10 +83,25 @@ function moderationTools(user, onUpdated) {
   return h(
     'div',
     { class: 'row', style: { marginTop: '10px' } },
-    h('button', { class: 'btn ghost small', text: '⚠️ Предупредить', onClick: () => act('warn') }),
+    h(
+      'button',
+      { class: 'btn ghost small', onClick: () => act('warn') },
+      icon('warn', { size: 15 }),
+      h('span', { text: 'Предупредить' }),
+    ),
     user.status === 'banned'
-      ? h('button', { class: 'btn ghost small', text: '✓ Разблокировать', onClick: () => act('unban') })
-      : h('button', { class: 'btn danger small', text: '⛔ Заблокировать', onClick: () => act('ban') }),
+      ? h(
+          'button',
+          { class: 'btn ghost small', onClick: () => act('unban') },
+          icon('check', { size: 15 }),
+          h('span', { text: 'Разблокировать' }),
+        )
+      : h(
+          'button',
+          { class: 'btn danger small', onClick: () => act('ban') },
+          icon('ban', { size: 15 }),
+          h('span', { text: 'Заблокировать' }),
+        ),
   );
 }
 
@@ -103,7 +119,7 @@ export async function profileView({ params, query }) {
   } catch (error) {
     main.replaceChildren(
       header({ title: 'Профиль', back: true }),
-      emptyState('🕳', 'Профиль не найден', error.message),
+      emptyState('user', 'Профиль не найден', error.message),
     );
     return;
   }
@@ -113,7 +129,7 @@ export async function profileView({ params, query }) {
   main.append(
     header({
       title: user.displayName,
-      subtitle: plural(user.counts.posts, 'промт', 'промта', 'промтов'),
+      subtitle: plural(user.counts.posts, 'промпт', 'промпта', 'промптов'),
       back: true,
     }),
   );
@@ -151,7 +167,7 @@ export async function profileView({ params, query }) {
     const stats = h(
       'div',
       { class: 'profile-stats' },
-      stat(current.counts.posts, 'промт', 'промта', 'промтов'),
+      stat(current.counts.posts, 'промпт', 'промпта', 'промптов'),
       stat(current.counts.following, 'подписка', 'подписки', 'подписок', () =>
         showPeople(current.username, 'following'),
       ),
@@ -159,6 +175,7 @@ export async function profileView({ params, query }) {
         showPeople(current.username, 'followers'),
       ),
       stat(current.counts.likes, 'лайк', 'лайка', 'лайков'),
+      current.isMe ? stat(current.counts.bookmarks ?? 0, 'сохранённый', 'сохранённых', 'сохранённых') : null,
     );
 
     const statusNote =
@@ -190,7 +207,9 @@ export async function profileView({ params, query }) {
             'h2',
             { class: 'profile-name' },
             current.displayName,
-            current.role === 'admin' ? h('span', { class: 'admin-tag', style: { marginLeft: '8px' }, text: 'админ' }) : null,
+            current.role === 'admin'
+              ? icon('verified', { size: 19, filled: true, class: 'verified' })
+              : null,
           ),
           h('div', { class: 'profile-handle', text: `@${current.username}` }),
         ),
@@ -206,32 +225,41 @@ export async function profileView({ params, query }) {
   main.append(profileHead);
   render(user);
 
-  const tab = query.get('tab') === 'likes' ? 'likes' : 'posts';
+  const items = [
+    { id: 'posts', label: 'Промпты и репосты' },
+    { id: 'likes', label: 'Понравилось' },
+    // Сохранённое приватно: вкладка есть только в собственном профиле.
+    ...(user.isMe ? [{ id: 'bookmarks', label: 'Сохранённое' }] : []),
+  ];
+  const requested = query.get('tab') ?? 'posts';
+  const tab = items.some((i) => i.id === requested) ? requested : 'posts';
+
   main.append(
     h(
       'div',
-      { class: 'tabs', style: { borderBottom: '1px solid var(--border)' } },
-      [
-        { id: 'posts', label: 'Промты и репосты' },
-        { id: 'likes', label: 'Понравилось' },
-      ].map((item) =>
+      { class: 'profile-tabs' },
+      items.map((item) =>
         h('button', {
           class: `tab${item.id === tab ? ' active' : ''}`,
           text: item.label,
-          onClick: () =>
-            navigate(`/u/${user.username}${item.id === 'likes' ? '?tab=likes' : ''}`),
+          onClick: () => navigate(`/u/${user.username}${item.id === 'posts' ? '' : `?tab=${item.id}`}`),
         }),
       ),
     ),
   );
 
+  const EMPTY = {
+    posts: ['feather', 'Здесь пока нет промптов', user.isMe ? 'Опубликуйте первый промпт — он появится здесь.' : ''],
+    likes: ['heart', 'Пока нет понравившихся промптов', ''],
+    bookmarks: ['bookmark', 'Сохранённого пока нет', 'Нажмите на закладку под промптом, чтобы вернуться к нему позже.'],
+  };
+
   main.append(
     feedList({
       load: (page) => api.userPosts(user.username, { tab, page }),
-      emptyIcon: tab === 'likes' ? '🤍' : '📝',
-      emptyTitle: tab === 'likes' ? 'Пока нет понравившихся промтов' : 'Здесь пока нет промтов',
-      emptyText:
-        user.isMe && tab === 'posts' ? 'Опубликуйте первый промт — он появится здесь.' : '',
+      emptyIcon: EMPTY[tab][0],
+      emptyTitle: EMPTY[tab][1],
+      emptyText: EMPTY[tab][2],
     }),
   );
 }
