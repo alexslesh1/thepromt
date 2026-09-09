@@ -24,8 +24,11 @@ import { router as notificationsRouter } from './routes/notifications.js';
 import { router as adminRouter } from './routes/admin.js';
 import { router as proRouter } from './routes/pro.js';
 import { router as eduardoRouter } from './routes/eduardo.js';
+import { scheduleEduardoUsageCleanup } from './eduardo.js';
 import { router as testPromptRouter } from './routes/testPrompt.js';
 import { router as modelsRouter } from './routes/models.js';
+import { router as dmRouter } from './routes/dm.js';
+import { attachWebSocketServer } from './ws.js';
 
 export const app = express();
 
@@ -134,6 +137,7 @@ app.use('/api/pro', proRouter);
 app.use('/api/eduardo', eduardoRouter);
 app.use('/api/test-prompt', testPromptRouter);
 app.use('/api/models', modelsRouter);
+app.use('/api/dm', dmRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Метод API не найден' });
@@ -175,11 +179,13 @@ app.use((error, _req, res, _next) => {
 if (process.argv[1] && import.meta.url === `file://${path.resolve(process.argv[1])}`) {
   cleanupExpired();
   setInterval(cleanupExpired, 60 * 60 * 1000).unref();
+  scheduleEduardoUsageCleanup();
 
   const server = app.listen(config.port, () => {
     console.log(`ThePrompt запущен: http://localhost:${config.port}`);
     console.log(`Режим: ${config.env}; почта: ${mailerMode}${devCodesEnabled ? ' (код придёт в ответе API и в консоль)' : ''}`);
   });
+  attachWebSocketServer(server);
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {

@@ -374,7 +374,7 @@ export function postCard(post, options = {}) {
           'a',
           { class: 'model-badge', href: `/?model=${post.modelFamily}`, onClick: stop, title: model.label },
           modelTile(model),
-          h('span', { text: model.short ?? model.label }),
+          h('span', { class: 'model-badge-label', text: model.short ?? model.label }),
         ),
         h('span', { class: `level-pill ${post.difficulty}`, text: difficultyLabel(post.difficulty) }),
         postMenu(post, card),

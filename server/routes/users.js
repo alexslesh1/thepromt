@@ -19,10 +19,12 @@ import {
   badRequest,
   clampInt,
   forbidden,
+  hashPassword,
   normalizeUsername,
   notFound,
   nowIso,
   text,
+  verifyPassword,
   wrap,
 } from '../util.js';
 
@@ -153,6 +155,10 @@ meRouter.patch(
       if (!['light', 'dark'].includes(body.theme)) throw badRequest('Неизвестная тема');
       updates.theme = body.theme;
     }
+    if (body.locale !== undefined) {
+      if (!['ru', 'en'].includes(body.locale)) throw badRequest('Неизвестный язык');
+      updates.locale = body.locale;
+    }
     if (body.avatarUrl !== undefined) {
       updates.avatar_url = body.avatarUrl ? String(body.avatarUrl).slice(0, 300) : null;
     }
@@ -178,6 +184,36 @@ meRouter.patch(
       id: req.user.id,
     });
 
+    res.json({ user: privateUser(userById(req.user.id)) });
+  }),
+);
+
+/**
+ * POST /api/me/password — задать пароль (если ещё не был задан) или сменить
+ * существующий. Пароль — необязательный дополнительный способ входа поверх
+ * основного OTP/OAuth, а не замена им.
+ */
+meRouter.post(
+  '/password',
+  requireAuth,
+  wrap(async (req, res) => {
+    const row = userById(req.user.id);
+    const newPassword = String(req.body?.newPassword ?? '');
+    if (newPassword.length < 8) throw badRequest('Пароль: минимум 8 символов');
+    if (newPassword.length > 200) throw badRequest('Пароль слишком длинный');
+
+    if (row.password_hash) {
+      const current = String(req.body?.currentPassword ?? '');
+      if (!verifyPassword(current, row.password_hash)) {
+        throw badRequest('Текущий пароль неверен', 'wrong_password');
+      }
+    }
+
+    run('UPDATE users SET password_hash = $hash, updated_at = $now WHERE id = $id', {
+      hash: hashPassword(newPassword),
+      now: nowIso(),
+      id: req.user.id,
+    });
     res.json({ user: privateUser(userById(req.user.id)) });
   }),
 );

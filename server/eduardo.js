@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { run } from './db.js';
 
 const SYSTEM_PROMPTS = {
   qa: 'Ты — Eduardo, помощник ThePrompt. Отвечай на вопрос пользователя кратко, точно и по делу, на русском языке.',
@@ -177,4 +178,31 @@ export async function generateImage({ prompt }) {
   const name = `eduardo-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.png`;
   fs.writeFileSync(path.join(config.uploadsDir, name), buffer);
   return { url: `/uploads/${name}`, simulated: false };
+}
+
+/**
+ * Лимиты Eduardo считаются помесячно (period = 'YYYY-MM' в eduardo_usage) —
+ * новый месяц сам по себе даёт пользователю новый пустой счётчик, отдельного
+ * «сброса» для этого не нужно. Эта функция — фоновая уборка: раз в сутки
+ * удаляет строки за прошлые месяцы, чтобы таблица не росла бесконечно.
+ */
+export function pruneOldEduardoUsage() {
+  const currentPeriod = new Date().toISOString().slice(0, 7);
+  run('DELETE FROM eduardo_usage WHERE period < $currentPeriod', { currentPeriod });
+}
+
+function msUntilNextUtcMidnight() {
+  const now = new Date();
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  return next - now.getTime();
+}
+
+/** Запускает pruneOldEduardoUsage() сразу и затем каждые сутки в 00:00 UTC. */
+export function scheduleEduardoUsageCleanup() {
+  pruneOldEduardoUsage();
+  const tick = () => {
+    pruneOldEduardoUsage();
+    setTimeout(tick, 24 * 60 * 60 * 1000).unref();
+  };
+  setTimeout(tick, msUntilNextUtcMidnight()).unref();
 }

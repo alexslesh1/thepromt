@@ -104,6 +104,87 @@ function emailStep(close, prefill = '') {
       text: 'Введите почту — пришлём одноразовый код. Пароль придумывать не нужно.',
     }),
     form,
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn ghost block',
+        style: { marginTop: '10px' },
+        text: 'Войти по паролю',
+        onClick: () => renderStep(close, (c) => passwordLoginStep(c, input.value.trim())),
+      },
+    ),
+  );
+}
+
+/** Экран 1b: вход по email + паролю (альтернатива коду из письма). */
+function passwordLoginStep(close, prefill = '') {
+  const error = h('p', { class: 'error-text', style: { display: 'none' } });
+  const emailInput = h('input', {
+    class: 'input',
+    type: 'email',
+    autocomplete: 'email',
+    placeholder: 'you@example.com',
+    value: prefill,
+  });
+  const passwordInput = h('input', {
+    class: 'input',
+    type: 'password',
+    autocomplete: 'current-password',
+    placeholder: '••••••••',
+  });
+  const submit = h('button', { class: 'btn block', text: 'Войти', type: 'submit' });
+
+  const form = h(
+    'form',
+    {
+      onSubmit: async (event) => {
+        event.preventDefault();
+        error.style.display = 'none';
+        submit.disabled = true;
+        submit.textContent = 'Входим…';
+        try {
+          const result = await api.loginWithPassword(emailInput.value.trim(), passwordInput.value);
+          setUser(result.user);
+          if (result.needsProfile) {
+            renderStep(close, profileStep);
+          } else {
+            close(true);
+            toast(`С возвращением, ${result.user.displayName}!`);
+          }
+        } catch (err) {
+          error.textContent = err.message;
+          error.style.display = 'block';
+          submit.disabled = false;
+          submit.textContent = 'Войти';
+        }
+      },
+    },
+    h('label', { class: 'field' }, h('span', { class: 'label', text: 'Электронная почта' }), emailInput),
+    h('label', { class: 'field' }, h('span', { class: 'label', text: 'Пароль' }), passwordInput),
+    error,
+    submit,
+  );
+
+  return frag(
+    h(
+      'div',
+      { class: 'modal-head' },
+      h('h2', { text: 'Вход по паролю' }),
+      h('button', { class: 'icon-btn', onClick: () => close(), 'aria-label': 'Закрыть' }, icon('close', { size: 18 })),
+    ),
+    h('p', {
+      class: 'lead',
+      text: 'Работает только если вы уже задали пароль в настройках. Иначе войдите по коду из письма.',
+    }),
+    form,
+    h('button', {
+      type: 'button',
+      class: 'btn ghost block',
+      style: { marginTop: '10px' },
+      text: 'Войти по коду из письма',
+      onClick: () => renderStep(close, (c) => emailStep(c, emailInput.value.trim())),
+    }),
   );
 }
 

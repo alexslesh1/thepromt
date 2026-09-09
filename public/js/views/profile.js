@@ -142,19 +142,31 @@ export async function profileView({ params, query }) {
 
     const followBtn = current.isMe
       ? h('button', { class: 'btn ghost', text: 'Редактировать профиль', onClick: () => navigate('/settings') })
-      : h('button', {
-          class: current.isFollowing ? 'btn ghost' : 'btn',
-          text: current.isFollowing ? 'Вы подписаны' : 'Подписаться',
-          onClick: async () => {
-            if (!(await requireAuth('Войдите, чтобы подписываться'))) return;
-            try {
-              const result = await api.follow(current.username);
-              render(result.user);
-            } catch (error) {
-              toast(error.message, 'error');
-            }
-          },
-        });
+      : h(
+          'div',
+          { style: { display: 'flex', gap: '8px' } },
+          h('button', {
+            class: 'btn ghost',
+            title: 'Написать',
+            onClick: async () => {
+              if (!(await requireAuth('Войдите, чтобы писать личные сообщения'))) return;
+              navigate(`/dm/${current.username}`);
+            },
+          }, icon('feather', { size: 16 })),
+          h('button', {
+            class: current.isFollowing ? 'btn ghost' : 'btn',
+            text: current.isFollowing ? 'Вы подписаны' : 'Подписаться',
+            onClick: async () => {
+              if (!(await requireAuth('Войдите, чтобы подписываться'))) return;
+              try {
+                const result = await api.follow(current.username);
+                render(result.user);
+              } catch (error) {
+                toast(error.message, 'error');
+              }
+            },
+          }),
+        );
 
     const stat = (count, one, few, many, onClick) =>
       h(

@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { currentPath, navigate } from '../router.js';
 import { isAdmin, setUser, state, subscribe, applyTheme } from '../state.js';
 import { avatar, frag, h, modal, toast } from '../dom.js';
-import { adminBadge, brandMark, icon, modelTile, proBadge } from '../icons.js';
+import { adminBadge, icon, modelTile, proBadge } from '../icons.js';
 import { openAuth } from './auth.js';
 import { openComposer } from './composer.js';
 import { openProModal } from './pro.js';
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/explore', icon: 'search', label: 'Обзор' },
   { href: '/notifications', icon: 'bell', label: 'Уведомления', auth: true, badge: 'unread' },
   { href: '/messages', icon: 'message', label: 'Сообщения', auth: true, badge: 'unreadMessages' },
+  { href: '/dm', icon: 'feather', label: 'Личные сообщения', auth: true, badge: 'unreadDms' },
   { href: '/admin', icon: 'shieldCheck', label: 'Админка', admin: true, badge: 'openReports' },
 ];
 
@@ -38,17 +39,17 @@ function isActive(href) {
   return href === '/' ? path === '/' : path.startsWith(href);
 }
 
+const BADGE_KEYS = { unread: 'unread', unreadMessages: 'unreadMessages', unreadDms: 'unreadDms', openReports: 'openReports' };
+
 function badgeValue(key) {
-  const value =
-    key === 'unread' ? state.unread : key === 'unreadMessages' ? state.unreadMessages : key === 'openReports' ? state.openReports : 0;
+  const value = state[BADGE_KEYS[key]] ?? 0;
   return value > 0 ? (value > 99 ? '99+' : String(value)) : null;
 }
 
-function brand({ compact = false } = {}) {
+function brand() {
   return h(
     'a',
     { class: 'brand', href: '/' },
-    brandMark(compact ? 34 : 42),
     h(
       'span',
       { class: 'brand-text' },
@@ -446,7 +447,7 @@ function mobileTop() {
   return h(
     'div',
     { class: 'mobile-top' },
-    brand({ compact: true }),
+    brand(),
     h('span', { class: 'spacer' }),
     h(
       'button',
@@ -468,6 +469,7 @@ function mobileBar() {
     { href: '/eduardo', icon: 'sparkles', auth: true },
     { href: '/notifications', icon: 'bell', badge: 'unread', auth: true },
     { href: '/messages', icon: 'message', badge: 'unreadMessages', auth: true },
+    { href: '/dm', icon: 'feather', badge: 'unreadDms', auth: true },
     ...(isAdmin() ? [{ href: '/admin', icon: 'shieldCheck', badge: 'openReports' }] : []),
     state.user?.username ? { href: `/u/${state.user.username}`, icon: 'user' } : { href: '/settings', icon: 'gear' },
   ].filter((item) => !item.auth || state.user);

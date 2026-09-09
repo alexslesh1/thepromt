@@ -62,6 +62,7 @@ export const api = {
   logoutAll: () => request('POST', '/api/auth/logout-all'),
   usernameAvailable: (username) => request('GET', `/api/auth/username-available${query({ username })}`),
   oauthProviders: () => request('GET', '/api/auth/oauth/providers'),
+  loginWithPassword: (email, password) => request('POST', '/api/auth/login-password', { email, password }),
 
   feed: (params, signal) => request('GET', `/api/posts${query(params)}`, undefined, { signal }),
   post: (id) => request('GET', `/api/posts/${id}`),
@@ -88,6 +89,7 @@ export const api = {
 
   updateMe: (data) => request('PATCH', '/api/me', data),
   deleteMe: () => request('DELETE', '/api/me'),
+  setPassword: (data) => request('POST', '/api/me/password', data),
 
   upload: (file) => {
     const form = new FormData();
@@ -114,6 +116,10 @@ export const api = {
   adminRestorePost: (id) => request('POST', `/api/admin/posts/${id}/restore`),
   moderateUser: (id, data) => request('POST', `/api/admin/users/${id}/moderate`, data),
   adminUsers: (params) => request('GET', `/api/admin/users${query(params)}`),
+
+  dmConversations: () => request('GET', '/api/dm/conversations'),
+  dmThread: (username) => request('GET', `/api/dm/${encodeURIComponent(username)}`),
+  sendDm: (username, body) => request('POST', `/api/dm/${encodeURIComponent(username)}`, { body }),
 
   models: () => request('GET', '/api/models'),
   userModels: (username) => request('GET', `/api/models/user/${encodeURIComponent(username)}`),

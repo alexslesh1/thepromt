@@ -24,9 +24,10 @@ process.env.GITHUB_CLIENT_SECRET = 'test-github-secret';
 process.env.DEEPSEEK_API_KEY = '';
 
 const { app } = await import('../server/index.js');
-const { closeDb, get: dbGet } = await import('../server/db.js');
+const { closeDb, get: dbGet, run: dbRun } = await import('../server/db.js');
 const { config } = await import('../server/config.js');
 const { sha256 } = await import('../server/util.js');
+const { pruneOldEduardoUsage } = await import('../server/eduardo.js');
 
 /** Временно подставляет тестовый ключ DeepSeek на время выполнения fn(). */
 async function withDeepseekKey(fn) {
@@ -893,6 +894,36 @@ test('Eduardo: у Pro-пользователя лимиты выше', async () 
   assert.equal(usage.image.limit, 3);
 });
 
+test('Eduardo: ежедневная уборка удаляет только счётчики за прошлые месяцы', async () => {
+  const userId = bob.user.id;
+  const oldPeriod = '2000-01';
+  const currentPeriod = new Date().toISOString().slice(0, 7);
+  dbRun(
+    `INSERT INTO eduardo_usage (user_id, period, text_used, image_used) VALUES ($userId, $period, 3, 1)
+     ON CONFLICT(user_id, period) DO UPDATE SET text_used = 3, image_used = 1`,
+    { userId, period: oldPeriod },
+  );
+  dbRun(
+    `INSERT INTO eduardo_usage (user_id, period, text_used) VALUES ($userId, $period, 1)
+     ON CONFLICT(user_id, period) DO UPDATE SET text_used = text_used`,
+    { userId, period: currentPeriod },
+  );
+
+  pruneOldEduardoUsage();
+
+  const oldRow = dbGet('SELECT 1 AS found FROM eduardo_usage WHERE user_id = $userId AND period = $period', {
+    userId,
+    period: oldPeriod,
+  });
+  assert.ok(!oldRow, 'строка за прошлый месяц должна быть удалена уборкой');
+
+  const currentRow = dbGet('SELECT 1 AS found FROM eduardo_usage WHERE user_id = $userId AND period = $period', {
+    userId,
+    period: currentPeriod,
+  });
+  assert.ok(currentRow, 'счётчик за текущий месяц уборка трогать не должна');
+});
+
 test('Eduardo требует входа', async () => {
   const res = await client()('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Вопрос' }, { raw: true });
   assert.equal(res.status, 401);
@@ -954,6 +985,50 @@ test('Модели: только админ может добавлять в о�
   await admin.call('DELETE', `/api/models/${created.model.id}`);
   const after = await client()('GET', '/api/models');
   assert.ok(!after.global.some((m) => m.id === created.model.id));
+});
+
+test('DM: отправка сообщения, счётчик непрочитанного и отметка прочитанным', async () => {
+  const sent = await bob.call('POST', `/api/dm/${eduardoTools.user.username}`, { body: 'Привет! Как продвигается промпт?' });
+  assert.equal(sent.message.body, 'Привет! Как продвигается промпт?');
+  assert.equal(sent.message.mine, true);
+
+  const recipientConvos = await eduardoTools.call('GET', '/api/dm/conversations');
+  const withBob = recipientConvos.items.find((i) => i.user.username === bob.user.username);
+  assert.ok(withBob, 'диалог с bob должен появиться у получателя');
+  assert.equal(withBob.unread, 1);
+  assert.equal(withBob.lastMessage.mine, false);
+
+  const senderConvos = await bob.call('GET', '/api/dm/conversations');
+  const withRecipient = senderConvos.items.find((i) => i.user.username === eduardoTools.user.username);
+  assert.ok(withRecipient);
+  assert.equal(withRecipient.unread, 0, 'у отправителя его же сообщение не считается непрочитанным');
+  assert.equal(withRecipient.lastMessage.mine, true);
+
+  const thread = await eduardoTools.call('GET', `/api/dm/${bob.user.username}`);
+  assert.equal(thread.items.length, 1);
+  assert.equal(thread.items[0].body, 'Привет! Как продвигается промпт?');
+
+  const afterRead = await eduardoTools.call('GET', '/api/dm/conversations');
+  const afterReadWithBob = afterRead.items.find((i) => i.user.username === bob.user.username);
+  assert.equal(afterReadWithBob.unread, 0, 'открытие переписки должно пометить сообщения прочитанными');
+});
+
+test('DM: нельзя писать себе, пустое сообщение и несуществующий адресат отклоняются', async () => {
+  const toSelf = await bob.call('POST', `/api/dm/${bob.user.username}`, { body: 'Привет себе' }, { raw: true });
+  assert.equal(toSelf.status, 400);
+
+  const empty = await bob.call('POST', `/api/dm/${eduardoTools.user.username}`, { body: '   ' }, { raw: true });
+  assert.equal(empty.status, 400);
+
+  const noSuchUser = await bob.call('POST', '/api/dm/no_such_user_xyz', { body: 'Привет' }, { raw: true });
+  assert.equal(noSuchUser.status, 404);
+});
+
+test('DM требует входа', async () => {
+  const res = await client()('POST', `/api/dm/${bob.user.username}`, { body: 'Привет' }, { raw: true });
+  assert.equal(res.status, 401);
+  const res2 = await client()('GET', '/api/dm/conversations', undefined, { raw: true });
+  assert.equal(res2.status, 401);
 });
 
 test('test-prompt: пустой промпт отклоняется', async () => {
@@ -1087,6 +1162,67 @@ test('test-prompt: rate limit — не больше 10 запросов в ми�
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('пароль: изначально не задан, можно задать без текущего пароля', async () => {
+  const me0 = await bob.call('GET', '/api/auth/me');
+  assert.equal(me0.user.hasPassword, false);
+
+  const res = await bob.call('POST', '/api/me/password', { newPassword: 'первыйпароль123' });
+  assert.equal(res.user.hasPassword, true);
+});
+
+test('пароль: смена требует верный текущий пароль', async () => {
+  const wrong = await bob.call(
+    'POST',
+    '/api/me/password',
+    { currentPassword: 'неправильный', newPassword: 'новыйпароль456' },
+    { raw: true },
+  );
+  assert.equal(wrong.status, 400);
+  assert.equal(wrong.data.code, 'wrong_password');
+
+  const ok = await bob.call('POST', '/api/me/password', {
+    currentPassword: 'первыйпароль123',
+    newPassword: 'новыйпароль456',
+  });
+  assert.equal(ok.user.hasPassword, true);
+});
+
+test('пароль: слишком короткий пароль отклоняется', async () => {
+  const res = await bob.call('POST', '/api/me/password', { newPassword: '123' }, { raw: true });
+  assert.equal(res.status, 400);
+});
+
+test('вход по паролю: верные данные открывают сессию, неверные — отклоняются', async () => {
+  const wrong = await client()(
+    'POST',
+    '/api/auth/login-password',
+    { email: 'bob@example.com', password: 'не тот пароль' },
+    { raw: true },
+  );
+  assert.equal(wrong.status, 400);
+  assert.equal(wrong.data.code, 'invalid_credentials');
+
+  const fresh = client();
+  const ok = await fresh('POST', '/api/auth/login-password', {
+    email: 'bob@example.com',
+    password: 'новыйпароль456',
+  });
+  assert.equal(ok.user.username, 'bobik');
+  const me = await fresh('GET', '/api/auth/me');
+  assert.equal(me.user.username, 'bobik');
+});
+
+test('язык интерфейса: сохраняется через PATCH /api/me', async () => {
+  const bad = await bob.call('PATCH', '/api/me', { locale: 'fr' }, { raw: true });
+  assert.equal(bad.status, 400);
+
+  const res = await bob.call('PATCH', '/api/me', { locale: 'en' });
+  assert.equal(res.user.locale, 'en');
+
+  const me = await bob.call('GET', '/api/auth/me');
+  assert.equal(me.user.locale, 'en');
 });
 
 test('выход закрывает сессию', async () => {

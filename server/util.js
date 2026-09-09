@@ -43,6 +43,23 @@ export function generateOtp(length = 6) {
   return code;
 }
 
+/**
+ * Хеширование пароля через scrypt (встроенный в node:crypto — без внешней
+ * зависимости вроде bcrypt/argon2). Формат хранения: `salt:hash`, оба hex.
+ */
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password, stored) {
+  if (!stored || !stored.includes(':')) return false;
+  const [salt, hash] = stored.split(':');
+  const candidate = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return safeEqual(candidate, hash);
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function normalizeEmail(value) {

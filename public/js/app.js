@@ -12,11 +12,13 @@ import { profileView } from './views/profile.js';
 import { settingsView } from './views/settings.js';
 import { notificationsView } from './views/notifications.js';
 import { messagesView } from './views/messages.js';
+import { dmListView, dmThreadView } from './views/dm.js';
 import { eduardoView } from './views/eduardo.js';
 import { staticView } from './views/static.js';
 import { adminView } from './views/admin.js';
 import { openAuth, openCompleteProfile } from './components/auth.js';
 import { openComposer } from './components/composer.js';
+import './ws.js';
 
 route('/', homeView);
 route('/explore', exploreView);
@@ -25,6 +27,8 @@ route('/u/:username', profileView);
 route('/settings', settingsView);
 route('/notifications', notificationsView);
 route('/messages', messagesView);
+route('/dm', dmListView);
+route('/dm/:username', dmThreadView);
 route('/eduardo', eduardoView);
 route('/admin', adminView);
 

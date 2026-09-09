@@ -309,6 +309,102 @@ export async function settingsView() {
       h('div', { class: 'hint', text: 'Тёмная тема — основной режим ThePrompt. Выбор сохраняется в аккаунте и на этом устройстве.' }),
     );
 
+    const languageRow = h(
+      'div',
+      { class: 'card', style: { marginTop: '18px' } },
+      h('h3', { text: 'Язык интерфейса' }),
+      h(
+        'div',
+        { class: 'theme-switch' },
+        h('span', {
+          class: 'grow',
+          text: state.user.locale === 'en' ? 'English' : 'Русский',
+        }),
+        h(
+          'button',
+          {
+            class: 'btn ghost small',
+            type: 'button',
+            onClick: async () => {
+              const next = state.user.locale === 'en' ? 'ru' : 'en';
+              try {
+                const result = await api.updateMe({ locale: next });
+                setUser(result.user);
+                toast(next === 'en' ? 'Language switched to English' : 'Язык переключён на русский');
+                renderForm();
+              } catch (error) {
+                toast(error.message, 'error');
+              }
+            },
+          },
+          h('span', { text: state.user.locale === 'en' ? 'Русский' : 'English' }),
+        ),
+      ),
+    );
+
+    const passwordError = h('p', { class: 'error-text', style: { display: 'none' } });
+    const currentPasswordInput = h('input', { class: 'input', type: 'password', autocomplete: 'current-password' });
+    const newPasswordInput = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', minlength: 8, maxlength: 200 });
+    const confirmPasswordInput = h('input', { class: 'input', type: 'password', autocomplete: 'new-password' });
+    const passwordSubmit = h('button', {
+      class: 'btn subtle',
+      type: 'submit',
+      text: state.user.hasPassword ? 'Сменить пароль' : 'Задать пароль',
+    });
+    const passwordForm = h(
+      'form',
+      {
+        style: { marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' },
+        onSubmit: async (event) => {
+          event.preventDefault();
+          passwordError.style.display = 'none';
+          if (newPasswordInput.value !== confirmPasswordInput.value) {
+            passwordError.textContent = 'Пароли не совпадают';
+            passwordError.style.display = 'block';
+            return;
+          }
+          passwordSubmit.disabled = true;
+          try {
+            const result = await api.setPassword({
+              currentPassword: currentPasswordInput.value,
+              newPassword: newPasswordInput.value,
+            });
+            setUser(result.user);
+            currentPasswordInput.value = '';
+            newPasswordInput.value = '';
+            confirmPasswordInput.value = '';
+            toast('Пароль сохранён');
+            renderForm();
+          } catch (err) {
+            passwordError.textContent = err.message;
+            passwordError.style.display = 'block';
+          } finally {
+            passwordSubmit.disabled = false;
+          }
+        },
+      },
+      state.user.hasPassword
+        ? h('label', { class: 'field' }, h('span', { class: 'label', text: 'Текущий пароль' }), currentPasswordInput)
+        : null,
+      h('label', { class: 'field' }, h('span', { class: 'label', text: 'Новый пароль' }), newPasswordInput),
+      h('label', { class: 'field' }, h('span', { class: 'label', text: 'Повторите новый пароль' }), confirmPasswordInput),
+      passwordError,
+      passwordSubmit,
+    );
+
+    const passwordRow = h(
+      'div',
+      { class: 'card', style: { marginTop: '18px' } },
+      h('h3', { text: 'Пароль' }),
+      h('p', {
+        class: 'hint',
+        text: state.user.hasPassword
+          ? 'Пароль задан — им можно входить вместе с кодом из письма.'
+          : 'Пароль не задан. Основной способ входа — код из письма; пароль можно добавить как дополнительный.',
+      }),
+      passwordForm,
+    );
+
     const accountRow = h(
       'div',
       { class: 'card' },
@@ -369,7 +465,7 @@ export async function settingsView() {
           }),
     );
 
-    container.replaceChildren(form, proRow, modelsRow, themeRow, accountRow);
+    container.replaceChildren(form, proRow, modelsRow, themeRow, languageRow, passwordRow, accountRow);
   };
 
   renderForm();

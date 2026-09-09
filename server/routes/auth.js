@@ -23,6 +23,7 @@ import {
   safeEqual,
   sha256,
   text,
+  verifyPassword,
   wrap,
 } from '../util.js';
 
@@ -30,6 +31,7 @@ export const router = express.Router();
 
 const requestLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 10 });
 const verifyLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+const passwordLoginLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 
 const RESERVED_USERNAMES = new Set([
   'admin', 'administrator', 'root', 'support', 'api', 'settings', 'login',
@@ -138,6 +140,30 @@ router.post(
       return findOrCreateUserByEmail(email, { adminEmails: config.adminEmails });
     });
 
+    if (user.status === 'banned') {
+      throw forbidden(`Аккаунт заблокирован: ${user.status_reason || 'нарушение правил'}`);
+    }
+
+    const token = createSession(user.id, req.get('user-agent') || '');
+    setSessionCookie(res, token);
+    res.json({ ok: true, user: privateUser(user), needsProfile: !user.username });
+  }),
+);
+
+/** POST /api/auth/login-password — вход по email+паролю (альтернатива коду). */
+router.post(
+  '/login-password',
+  wrap(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password ?? '');
+
+    const check = passwordLoginLimiter(`${req.ip}:${email}`);
+    if (!check.ok) throw badRequest('Слишком много попыток. Попробуйте позже.', 'rate_limited');
+
+    const user = userByEmail(email);
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      throw badRequest('Неверный email или пароль', 'invalid_credentials');
+    }
     if (user.status === 'banned') {
       throw forbidden(`Аккаунт заблокирован: ${user.status_reason || 'нарушение правил'}`);
     }

@@ -61,10 +61,13 @@ export function privateUser(row) {
     ...publicUser(row, row.id),
     email: row.email,
     theme: row.theme,
+    locale: row.locale || 'ru',
+    hasPassword: !!row.password_hash,
     proExpiresAt: row.pro_expires_at || null,
     needsProfile: !row.username,
     unreadNotifications: countUnreadNotifications(row.id),
     unreadMessages: countUnreadMessages(row.id),
+    unreadDms: countUnreadDms(row.id),
     openReports: row.role === 'admin' ? countOpenReports() : 0,
   };
 }
@@ -485,6 +488,12 @@ export const countUnreadMessages = (userId) =>
 
 export const countOpenReports = () =>
   get("SELECT COUNT(*) AS n FROM reports WHERE status = 'open'").n;
+
+/** Непрочитанные личные сообщения — бейдж пункта «Личные сообщения». */
+export const countUnreadDms = (userId) =>
+  get('SELECT COUNT(*) AS n FROM dm_messages WHERE recipient_id = $userId AND read_at IS NULL', {
+    userId,
+  }).n;
 
 /** Типы, которые показываются в разделе «Сообщения» (внутренняя переписка). */
 export const MESSAGE_TYPES = ['moderation', 'report', 'system'];

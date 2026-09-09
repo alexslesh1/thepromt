@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS users (
   is_pro         INTEGER NOT NULL DEFAULT 0,
   pro_since      TEXT,
   pro_expires_at TEXT,
+  password_hash  TEXT,                              -- необязательный доп. способ входа
+  locale         TEXT NOT NULL DEFAULT 'ru',         -- ru | en, язык интерфейса
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -224,6 +226,19 @@ CREATE TABLE IF NOT EXISTS models (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_models_owner ON models(owner_id);
+
+-- Личные сообщения (1:1). «Диалог» — не отдельная сущность, а пара
+-- (sender_id, recipient_id) с любой стороны — собирается запросом.
+CREATE TABLE IF NOT EXISTS dm_messages (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body         TEXT NOT NULL,
+  read_at      TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dm_sender ON dm_messages(sender_id, recipient_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_dm_recipient ON dm_messages(recipient_id, sender_id, created_at);
 `;
 
 db.exec(SCHEMA);
@@ -244,6 +259,8 @@ addColumnIfMissing('posts', 'poll_question', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('users', 'is_pro', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'pro_since', 'TEXT');
 addColumnIfMissing('users', 'pro_expires_at', 'TEXT');
+addColumnIfMissing('users', 'password_hash', 'TEXT');
+addColumnIfMissing('users', 'locale', "TEXT NOT NULL DEFAULT 'ru'");
 
 // Индексы по новым колонкам — только после того, как колонки точно существуют.
 db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');

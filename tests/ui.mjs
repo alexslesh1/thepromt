@@ -402,6 +402,54 @@ await step('Модели: своя модель в настройках/проф
   await shot('25-admin-models');
 });
 
+await step('Личные сообщения: диалог из профиля и доставка в реальном времени', async () => {
+  // Второй пользователь в отдельном контексте браузера — своя сессия/кука,
+  // как два разных человека за разными компьютерами.
+  const ctx2 = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const page2 = await ctx2.newPage();
+  page2.on('pageerror', (e) => errors.push(`dm-second-user pageerror: ${e.message}`));
+
+  await page2.goto(base, { waitUntil: 'networkidle' });
+  await page2.getByRole('button', { name: 'Войти' }).first().click();
+  await page2.waitForSelector('.modal');
+  await page2.locator('.modal input[type=email]').fill('nika@theprompt.dev');
+  await page2.getByRole('button', { name: 'Получить код' }).click();
+  await page2.waitForSelector('.otp-input', { timeout: 8000 });
+  await page2.getByRole('button', { name: 'Подтвердить' }).click();
+  await page2.waitForSelector('.me-chip', { timeout: 8000 });
+
+  // admin (основная страница) открывает профиль nika_prompts и жмёт «Написать».
+  await page.goto(`${base}/u/nika_prompts`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.profile-head');
+  await page.locator('.profile-top button[title="Написать"]').click();
+  await page.waitForURL(/\/dm\/nika_prompts/);
+  await page.waitForSelector('.dm-feed');
+
+  // nika открывает переписку с admin с другой стороны.
+  await page2.goto(`${base}/dm/admin`, { waitUntil: 'networkidle' });
+  await page2.waitForSelector('.dm-feed');
+
+  const text = `Автотест DM ${Date.now()}`;
+  await page.locator('.dm-input').fill(text);
+  await page.locator('.comment-form button[type=submit]').click();
+  await page.waitForTimeout(600);
+  const senderText = await page.locator('.dm-feed').innerText();
+  if (!senderText.includes(text)) throw new Error('отправитель не видит своё сообщение');
+  await shot('26-dm-sender');
+
+  // Без перезагрузки — сообщение должно прилететь по WebSocket.
+  await page2.waitForTimeout(1500);
+  const receiverText = await page2.locator('.dm-feed').innerText();
+  if (!receiverText.includes(text)) throw new Error('получатель не увидел сообщение в реальном времени по WebSocket');
+  await shot('27-dm-receiver');
+
+  await page2.goto(`${base}/dm`, { waitUntil: 'networkidle' });
+  const listText = await page2.locator('#app').innerText();
+  if (!listText.includes(text)) throw new Error('диалог не отображается в списке «Личные сообщения»');
+
+  await ctx2.close();
+});
+
 await step('редактор обрезки: аватар и баннер', async () => {
   await page.goto(`${base}/settings`, { waitUntil: 'networkidle' });
   await page.waitForSelector('form');
@@ -430,6 +478,39 @@ await step('редактор обрезки: аватар и баннер', asyn
   if (!savedToast.includes('сохранено')) throw new Error(`превью не подтвердило сохранение: ${savedToast}`);
 });
 
+await step('настройки: пароль и язык интерфейса', async () => {
+  await page.goto(`${base}/settings`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('form');
+
+  const passwordCard = page.locator('.card', { hasText: 'Пароль' });
+  const currentField = passwordCard.getByLabel('Текущий пароль');
+  if (await currentField.count()) {
+    // Пароль уже был задан в предыдущем прогоне этого же сценария на той же базе.
+    await currentField.fill('тестовыйпароль123');
+  }
+  await passwordCard.getByLabel('Новый пароль', { exact: true }).fill('тестовыйпароль123');
+  await passwordCard.getByLabel('Повторите новый пароль').fill('тестовыйпароль123');
+  await passwordCard.locator('button[type=submit]').click();
+  await page.waitForSelector('.toast');
+  const pwToast = await page.locator('.toast').last().innerText();
+  if (!pwToast.includes('сохранён')) throw new Error(`пароль не сохранился: ${pwToast}`);
+  await shot('28-settings-password');
+
+  const languageCard = page.locator('.card', { hasText: 'Язык интерфейса' });
+  const beforeLang = await languageCard.innerText();
+  await languageCard.locator('button').click();
+  await page.waitForSelector('.toast');
+  const afterLang = await languageCard.innerText();
+  if (beforeLang === afterLang) throw new Error('переключение языка не изменило состояние');
+
+  await page.reload({ waitUntil: 'networkidle' });
+  const persisted = await page.locator('.card', { hasText: 'Язык интерфейса' }).innerText();
+  if (persisted !== afterLang) throw new Error('выбор языка не сохранился после перезагрузки');
+  // Возвращаем язык обратно, чтобы не влиять на последующие шаги.
+  await page.locator('.card', { hasText: 'Язык интерфейса' }).locator('button').click();
+  await page.waitForSelector('.toast');
+});
+
 await step('статические страницы и Ctrl+K', async () => {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.locator('.side-footer a', { hasText: 'Правила' }).click();
@@ -451,6 +532,8 @@ await step('мобильная версия', async () => {
   await mp.waitForSelector('.post');
   if (!(await mp.locator('.mobile-bar').isVisible())) throw new Error('нет нижней панели');
   if (!(await mp.locator('.fab').isVisible())) throw new Error('нет кнопки создания поста');
+  const modelTile = mp.locator('.post').first().locator('.model-badge .model-tile');
+  if (!(await modelTile.isVisible())) throw new Error('иконка модели не видна в карточке поста на мобильной вёрстке');
   await mp.screenshot({ path: `${S}/shots/14-mobile.png` });
   await mp.goto(`${base}/u/nika_prompts`, { waitUntil: 'networkidle' });
   await mp.waitForSelector('.profile-head');

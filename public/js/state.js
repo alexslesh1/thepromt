@@ -11,6 +11,7 @@ export const state = {
   theme: document.documentElement.dataset.theme || 'dark',
   unread: 0,           // непрочитанные уведомления
   unreadMessages: 0,   // непрочитанные внутренние сообщения
+  unreadDms: 0,        // непрочитанные личные сообщения
   openReports: 0,      // открытые жалобы (для админа)
 };
 
@@ -27,6 +28,7 @@ export function setUser(user) {
   state.user = user;
   state.unread = user?.unreadNotifications ?? 0;
   state.unreadMessages = user?.unreadMessages ?? 0;
+  state.unreadDms = user?.unreadDms ?? 0;
   state.openReports = user?.openReports ?? 0;
   if (user?.theme && user.theme !== state.theme) applyTheme(user.theme, { persist: false });
   emit();
@@ -65,6 +67,7 @@ export async function refreshBadges() {
     if (user) {
       state.unread = user.unreadNotifications;
       state.unreadMessages = user.unreadMessages;
+      state.unreadDms = user.unreadDms;
       state.openReports = user.openReports;
       emit();
     }
