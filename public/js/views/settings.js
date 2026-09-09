@@ -3,8 +3,8 @@
 import { api } from '../api.js';
 import { applyTheme, setUser, state } from '../state.js';
 import { navigate } from '../router.js';
-import { avatar, charCounter, confirmDialog, h, toast } from '../dom.js';
-import { icon } from '../icons.js';
+import { avatar, charCounter, confirmDialog, emptyState, h, spinner, toast } from '../dom.js';
+import { customModelIcon, icon } from '../icons.js';
 import { openAuth } from '../components/auth.js';
 import { openImageCropper } from '../components/imageCropper.js';
 import { openProModal } from '../components/pro.js';
@@ -200,6 +200,87 @@ export async function settingsView() {
       ),
     );
 
+    const modelsSlot = h('div', {}, spinner('Загружаем модели…'));
+    const modelsRow = h(
+      'div',
+      { class: 'card', style: { marginTop: '18px' } },
+      h('h3', { text: 'Мои модели' }),
+      h('p', { class: 'hint', text: 'Свои AI-модели, которые видно у вас в профиле — необязательно из общего каталога.' }),
+      modelsSlot,
+    );
+
+    function renderModelsList(items) {
+      const rows = items.map((model) =>
+        h(
+          'div',
+          { class: 'card-row' },
+          customModelIcon(model, 22),
+          h('span', { class: 'grow', text: model.name }),
+          h(
+            'button',
+            {
+              class: 'btn ghost small',
+              type: 'button',
+              title: 'Удалить модель',
+              onClick: async () => {
+                try {
+                  await api.deleteModel(model.id);
+                  toast('Модель удалена');
+                  loadModels();
+                } catch (error) {
+                  toast(error.message, 'error');
+                }
+              },
+            },
+            icon('trash', { size: 14 }),
+          ),
+        ),
+      );
+
+      const nameInput = h('input', { class: 'input', placeholder: 'Название модели', maxlength: 60 });
+      const iconInput = h('input', { class: 'input', placeholder: 'Ссылка на иконку (необязательно)', maxlength: 300 });
+      const addForm = h(
+        'form',
+        {
+          class: 'row',
+          style: { marginTop: '12px', gap: '8px', flexWrap: 'wrap' },
+          onSubmit: async (event) => {
+            event.preventDefault();
+            const name = nameInput.value.trim();
+            if (!name) return;
+            try {
+              await api.addModel({ name, iconUrl: iconInput.value.trim() || undefined });
+              nameInput.value = '';
+              iconInput.value = '';
+              toast('Модель добавлена');
+              loadModels();
+            } catch (error) {
+              toast(error.message, 'error');
+            }
+          },
+        },
+        h('div', { class: 'grow', style: { minWidth: '160px' } }, nameInput),
+        h('div', { class: 'grow', style: { minWidth: '200px' } }, iconInput),
+        h('button', { class: 'btn small', type: 'submit', text: 'Добавить' }),
+      );
+
+      modelsSlot.replaceChildren(
+        ...rows,
+        ...(items.length ? [] : [h('p', { class: 'hint', text: 'Пока нет своих моделей — добавьте ниже.' })]),
+        addForm,
+      );
+    }
+
+    async function loadModels() {
+      try {
+        const { mine } = await api.models();
+        renderModelsList(mine);
+      } catch (error) {
+        modelsSlot.replaceChildren(emptyState('warn', 'Не удалось загрузить модели', error.message));
+      }
+    }
+    loadModels();
+
     const themeRow = h(
       'div',
       { class: 'card', style: { marginTop: '18px' } },
@@ -288,7 +369,7 @@ export async function settingsView() {
           }),
     );
 
-    container.replaceChildren(form, proRow, themeRow, accountRow);
+    container.replaceChildren(form, proRow, modelsRow, themeRow, accountRow);
   };
 
   renderForm();

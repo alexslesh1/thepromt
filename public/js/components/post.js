@@ -432,7 +432,7 @@ export function postCard(post, options = {}) {
   const commentCount = h('span', { text: formatCount(post.counts.comments) });
   const commentBtn = h(
     'button',
-    { class: 'action comment', title: 'Комментарии' },
+    { class: 'action comment-btn', title: 'Комментарии' },
     icon('comment', { size: 17 }),
     commentCount,
   );

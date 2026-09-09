@@ -6,6 +6,7 @@ import { navigate } from '../router.js';
 import {
   append,
   avatar,
+  confirmDialog,
   emptyState,
   frag,
   h,
@@ -15,7 +16,7 @@ import {
   timeEl,
   toast,
 } from '../dom.js';
-import { icon } from '../icons.js';
+import { customModelIcon, icon } from '../icons.js';
 import { postCard } from '../components/post.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
@@ -24,6 +25,7 @@ const STATUS_TABS = [
   { id: 'resolved', label: 'Обработанные' },
   { id: 'dismissed', label: 'Отклонённые' },
   { id: 'users', label: 'Пользователи' },
+  { id: 'models', label: 'Модели' },
 ];
 
 /** Карточка жалобы со всеми действиями модератора. */
@@ -256,6 +258,86 @@ async function usersTab(container) {
   await load();
 }
 
+/** Общий каталог AI-моделей: добавление, редактирование, удаление. */
+async function modelsTab(container) {
+  const list = h('div', {}, spinner('Загружаем модели…'));
+
+  const load = async () => {
+    list.replaceChildren(spinner('Загружаем модели…'));
+    try {
+      const { global } = await api.models();
+      list.replaceChildren(
+        ...(global.length
+          ? global.map((model) =>
+              h(
+                'div',
+                { class: 'card-row' },
+                customModelIcon(model, 24),
+                h('span', { class: 'grow strong', text: model.name }),
+                h(
+                  'button',
+                  {
+                    class: 'btn ghost small',
+                    type: 'button',
+                    onClick: async () => {
+                      const ok = await confirmDialog({
+                        title: 'Удалить модель?',
+                        message: `«${model.name}» пропадёт из общего каталога у всех пользователей.`,
+                        confirmText: 'Удалить',
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      try {
+                        await api.deleteModel(model.id);
+                        toast('Модель удалена');
+                        load();
+                      } catch (error) {
+                        toast(error.message, 'error');
+                      }
+                    },
+                  },
+                  icon('trash', { size: 14 }),
+                ),
+              ),
+            )
+          : [emptyState('sparkles', 'Общий каталог пуст', 'Добавьте первую модель формой ниже.')]),
+      );
+    } catch (error) {
+      list.replaceChildren(emptyState('warn', 'Ошибка', error.message));
+    }
+  };
+
+  const nameInput = h('input', { class: 'input', placeholder: 'Название модели', maxlength: 60 });
+  const iconInput = h('input', { class: 'input', placeholder: 'Ссылка на иконку (необязательно)', maxlength: 300 });
+  const addForm = h(
+    'form',
+    {
+      class: 'row',
+      style: { margin: '18px 0 14px', gap: '8px', flexWrap: 'wrap' },
+      onSubmit: async (event) => {
+        event.preventDefault();
+        const name = nameInput.value.trim();
+        if (!name) return;
+        try {
+          await api.addModel({ name, iconUrl: iconInput.value.trim() || undefined, global: true });
+          nameInput.value = '';
+          iconInput.value = '';
+          toast('Модель добавлена в общий каталог');
+          load();
+        } catch (error) {
+          toast(error.message, 'error');
+        }
+      },
+    },
+    h('div', { class: 'grow', style: { minWidth: '160px' } }, nameInput),
+    h('div', { class: 'grow', style: { minWidth: '200px' } }, iconInput),
+    h('button', { class: 'btn small', type: 'submit', text: 'Добавить в каталог' }),
+  );
+
+  container.replaceChildren(addForm, list);
+  await load();
+}
+
 export async function adminView({ query }) {
   const main = shell();
   main.replaceChildren();
@@ -310,6 +392,10 @@ export async function adminView({ query }) {
 
   if (tab === 'users') {
     await usersTab(content);
+    return;
+  }
+  if (tab === 'models') {
+    await modelsTab(content);
     return;
   }
 

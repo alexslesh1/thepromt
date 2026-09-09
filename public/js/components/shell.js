@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { currentPath, navigate } from '../router.js';
 import { isAdmin, setUser, state, subscribe, applyTheme } from '../state.js';
 import { avatar, frag, h, modal, toast } from '../dom.js';
-import { brandMark, icon, modelTile, proBadge } from '../icons.js';
+import { adminBadge, brandMark, icon, modelTile, proBadge } from '../icons.js';
 import { openAuth } from './auth.js';
 import { openComposer } from './composer.js';
 import { openProModal } from './pro.js';
@@ -91,7 +91,7 @@ function leftColumn() {
     h(
       'button',
       { class: 'compose-cta', title: 'Опубликовать промпт', onClick: composeAction },
-      icon('feather', { size: 18 }),
+      icon('plus', { size: 18 }),
       h('span', { class: 'label', text: 'Опубликовать промпт' }),
     ),
     assistantCard(),
@@ -378,7 +378,7 @@ function personRow(user) {
         'span',
         { class: 'strong ellipsis', style: { display: 'flex', alignItems: 'center', gap: '5px' } },
         h('span', { class: 'ellipsis', text: user.displayName }),
-        user.role === 'admin' ? icon('verified', { size: 14, filled: true, class: 'verified' }) : null,
+        user.role === 'admin' ? adminBadge(14) : null,
         user.isPro ? proBadge(14) : null,
       ),
       h('span', { class: 'muted ellipsis', text: `@${user.username}` }),
@@ -511,7 +511,7 @@ export function shell() {
     h(
       'button',
       { class: 'fab', title: 'Опубликовать промпт', 'aria-label': 'Опубликовать промпт', onClick: composeAction },
-      icon('feather', { size: 24 }),
+      icon('plus', { size: 26 }),
     ),
   );
 

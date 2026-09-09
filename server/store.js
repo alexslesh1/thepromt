@@ -570,11 +570,16 @@ export function suggestedUsers(viewerId, limit = 3) {
 }
 
 export function searchUsers(q, viewerId, limit = 10) {
+  // Люди обычно ищут по нику с «@» (как он и показан в интерфейсе) — убираем
+  // префикс, чтобы «@nika» находило то же, что и «nika». Также экранируем
+  // спецсимволы LIKE (% _ \), чтобы ник с подчёркиванием искался буквально.
+  const cleaned = q.trim().replace(/^@/, '').toLowerCase();
+  const escaped = cleaned.replace(/[\\%_]/g, (ch) => `\\${ch}`);
   return all(
     `SELECT * FROM users
      WHERE username IS NOT NULL AND status != 'banned'
-       AND (ulower(username) LIKE $q OR ulower(display_name) LIKE $q)
+       AND (ulower(username) LIKE $q ESCAPE '\\' OR ulower(display_name) LIKE $q ESCAPE '\\')
      ORDER BY username LIMIT $limit`,
-    { q: `%${q.toLowerCase()}%`, limit },
+    { q: `%${escaped}%`, limit },
   ).map((row) => publicUser(row, viewerId));
 }

@@ -24,8 +24,9 @@ process.env.GITHUB_CLIENT_SECRET = 'test-github-secret';
 process.env.DEEPSEEK_API_KEY = '';
 
 const { app } = await import('../server/index.js');
-const { closeDb } = await import('../server/db.js');
+const { closeDb, get: dbGet } = await import('../server/db.js');
 const { config } = await import('../server/config.js');
+const { sha256 } = await import('../server/util.js');
 
 /** Временно подставляет тестовый ключ DeepSeek на время выполнения fn(). */
 async function withDeepseekKey(fn) {
@@ -58,7 +59,7 @@ after(async () => {
 /** Клиент с собственной «банкой» cookie. */
 function client() {
   let cookie = '';
-  return async function call(method, url, body, { raw = false } = {}) {
+  const call = async function call(method, url, body, { raw = false } = {}) {
     const headers = { 'X-Requested-With': 'ThePrompt' };
     if (cookie) headers.cookie = cookie;
     if (body !== undefined) headers['content-type'] = 'application/json';
@@ -74,6 +75,11 @@ function client() {
     assert.ok(res.ok, `${method} ${url} → ${res.status}: ${JSON.stringify(data)}`);
     return data;
   };
+  // Сырое значение куки — нужно тестам, которые проверяют, что в БД лежит
+  // не сам токен, а его хеш (без этого пришлось бы тратить лишний
+  // /api/auth/request-code сверх лимита в 10/час на IP теста).
+  Object.defineProperty(call, 'cookie', { get: () => cookie });
+  return call;
 }
 
 /** Регистрация через OTP + создание профиля. */
@@ -95,11 +101,24 @@ let eduardoTools;
 
 test('регистрация по email с кодом подтверждения', async () => {
   alice = await signUp('alice@example.com', 'alice', 'Алиса');
-  bob = await signUp('bob@example.com', 'bob', 'Боб');
+  bob = await signUp('bob@example.com', 'bobik', 'Боб');
   admin = await signUp('admin@example.com', 'moderator', 'Модератор');
 
   assert.equal(alice.user.role, 'user');
   assert.equal(admin.user.role, 'admin', 'email из ADMIN_EMAILS получает роль администратора');
+});
+
+test('токен сессии в БД хранится хешем, а не как есть', async () => {
+  // Переиспользуем уже открытую сессию alice — без лишнего
+  // /api/auth/request-code сверх лимита в 10/час на IP теста.
+  const rawToken = alice.call.cookie.split('=')[1];
+  assert.ok(rawToken, 'у alice должна быть сессионная кука');
+
+  const plainRow = dbGet('SELECT 1 AS found FROM sessions WHERE token = $token', { token: rawToken });
+  assert.ok(!plainRow, 'сырой токен из куки не должен буквально совпадать со значением в БД');
+
+  const hashedRow = dbGet('SELECT 1 AS found FROM sessions WHERE token = $token', { token: sha256(rawToken) });
+  assert.ok(hashedRow, 'в БД должен лежать именно sha256-хеш токена');
 });
 
 test('неверный код не пускает в аккаунт', async () => {
@@ -340,12 +359,12 @@ test('профиль: посты, репосты и лайки', async () => {
   assert.equal(profile.user.counts.posts, 1);
   assert.equal(profile.user.counts.likes, 1);
 
-  const bobFeed = await client()('GET', '/api/users/bob/posts');
+  const bobFeed = await client()('GET', '/api/users/bobik/posts');
   const kinds = bobFeed.items.map((i) => i.type);
   assert.ok(kinds.includes('repost'), 'репост виден в профиле');
   assert.ok(kinds.includes('post'));
 
-  const likes = await client()('GET', '/api/users/bob/posts?tab=likes');
+  const likes = await client()('GET', '/api/users/bobik/posts?tab=likes');
   assert.equal(likes.items.length, 1);
 });
 
@@ -410,7 +429,7 @@ test('админ видит жалобу, открывает пост и уда�
   assert.equal(reports.items.length, 1);
   const report = reports.items[0];
   assert.equal(report.reason, 'spam');
-  assert.equal(report.reporter.username, 'bob');
+  assert.equal(report.reporter.username, 'bobik');
   assert.equal(report.post.id, postId);
 
   const card = await admin.call('GET', `/api/admin/reports/${report.id}`);
@@ -587,13 +606,13 @@ test('закладки: сохранить, снять, приватная вк�
   assert.equal(saved.bookmarked, true);
   assert.equal(saved.counts.bookmarks, 1);
 
-  const list = await bob.call('GET', '/api/users/bob/posts?tab=bookmarks');
+  const list = await bob.call('GET', '/api/users/bobik/posts?tab=bookmarks');
   assert.ok(list.items.some((i) => i.post.id === target.id));
 
   // Чужие сохранённые не отдаются.
-  const foreign = await admin.call('GET', '/api/users/bob/posts?tab=bookmarks', undefined, { raw: true });
+  const foreign = await admin.call('GET', '/api/users/bobik/posts?tab=bookmarks', undefined, { raw: true });
   assert.equal(foreign.status, 403);
-  const anon = await client()('GET', '/api/users/bob/posts?tab=bookmarks', undefined, { raw: true });
+  const anon = await client()('GET', '/api/users/bobik/posts?tab=bookmarks', undefined, { raw: true });
   assert.equal(anon.status, 403);
 
   const removed = await bob.call('POST', `/api/posts/${target.id}/bookmark`);
@@ -602,13 +621,13 @@ test('закладки: сохранить, снять, приватная вк�
 });
 
 test('счётчик сохранённого виден только владельцу профиля', async () => {
-  const mine = await bob.call('GET', '/api/users/bob');
+  const mine = await bob.call('GET', '/api/users/bobik');
   assert.equal(typeof mine.user.counts.bookmarks, 'number');
 
-  const foreign = await admin.call('GET', '/api/users/bob');
+  const foreign = await admin.call('GET', '/api/users/bobik');
   assert.equal(foreign.user.counts.bookmarks, undefined);
 
-  const anon = await client()('GET', '/api/users/bob');
+  const anon = await client()('GET', '/api/users/bobik');
   assert.equal(anon.user.counts.bookmarks, undefined);
 });
 
@@ -739,7 +758,7 @@ test('Pro: подписка активирует флаг и бейдж на п�
   assert.ok(sub.user.proExpiresAt);
 
   // Бейдж должен появиться и в чужом просмотре профиля, и на постах автора.
-  const publicProfile = await client()('GET', '/api/users/bob');
+  const publicProfile = await client()('GET', '/api/users/bobik');
   assert.equal(publicProfile.user.isPro, true);
 
   const created = await bob.call('POST', '/api/posts', {
@@ -785,6 +804,28 @@ test('Eduardo: текстовый лимит free-пользователя и д
   const history = await created.call('GET', '/api/eduardo/history');
   assert.equal(history.items.length, 5);
   assert.equal(history.items[0].tool, 'qa');
+});
+
+test('Eduardo: параллельные запросы не пробивают месячный лимит (гонка)', async () => {
+  const created = await signUp('eduardo-race@example.com', 'eduardo_race', 'Едуардо Рейс');
+
+  // Резервирование лимита — один атомарный SQL-запрос (INSERT/UPDATE с
+  // условием прямо в WHERE), поэтому даже параллельные запросы от одного
+  // пользователя не могут все проскочить проверку до того, как счётчик
+  // обновится — race condition из «прочитать, потом отдельно записать»
+  // здесь невозможна в принципе, а не просто маловероятна.
+  const results = await Promise.all(
+    Array.from({ length: 8 }, (_, i) =>
+      created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: `Гонка номер ${i}` }, { raw: true }),
+    ),
+  );
+  const okCount = results.filter((r) => r.status === 200).length;
+  const limitedCount = results.filter((r) => r.status === 402).length;
+  assert.equal(okCount, 5, 'ровно 5 из 8 параллельных запросов должны пройти при лимите 5');
+  assert.equal(limitedCount, 3);
+
+  const usage = await created.call('GET', '/api/eduardo/usage');
+  assert.equal(usage.text.used, 5, 'счётчик не должен уйти выше лимита из-за гонки');
 });
 
 test('Eduardo: генерация теста и кода (демо-режим)', async () => {
@@ -855,6 +896,64 @@ test('Eduardo: у Pro-пользователя лимиты выше', async () 
 test('Eduardo требует входа', async () => {
   const res = await client()('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Вопрос' }, { raw: true });
   assert.equal(res.status, 401);
+});
+
+test('Модели: анонимный доступ к каталогу и создание требует входа', async () => {
+  const anon = await client()('GET', '/api/models');
+  assert.deepEqual(anon.global, []);
+  assert.deepEqual(anon.mine, []);
+
+  const res = await client()('POST', '/api/models', { name: 'Что-то' }, { raw: true });
+  assert.equal(res.status, 401);
+});
+
+test('Модели: пользователь добавляет свою модель, видна только у него и на его профиле', async () => {
+  // Не alice — её сессию убивает более ранний тест бана/разбана (бан
+  // закрывает все сессии, повторный вход тестом не выполняется).
+  // eduardoTools — посторонний пользователь: не владелец и не админ.
+  const created = await bob.call('POST', '/api/models', { name: 'Мой ассистент', iconUrl: 'https://example.com/a.png' });
+  assert.equal(created.model.name, 'Мой ассистент');
+  assert.equal(created.model.isGlobal, false);
+
+  const mineList = await bob.call('GET', '/api/models');
+  assert.ok(mineList.mine.some((m) => m.id === created.model.id));
+  assert.ok(!mineList.global.some((m) => m.id === created.model.id));
+
+  const publicList = await eduardoTools.call('GET', `/api/models/user/${bob.user.username}`);
+  assert.ok(publicList.items.some((m) => m.id === created.model.id));
+
+  const strangersView = await eduardoTools.call('GET', '/api/models');
+  assert.ok(!strangersView.mine.some((m) => m.id === created.model.id), 'чужая личная модель не должна попадать в mine');
+
+  const forbiddenDelete = await eduardoTools.call('DELETE', `/api/models/${created.model.id}`, undefined, { raw: true });
+  assert.equal(forbiddenDelete.status, 403, 'посторонний пользователь не может удалить чужую модель');
+
+  const renamed = await bob.call('PATCH', `/api/models/${created.model.id}`, { name: 'Обновлённое имя' });
+  assert.equal(renamed.model.name, 'Обновлённое имя');
+
+  // Админ модерирует чужие модели — это разрешённое действие, не 403.
+  await admin.call('DELETE', `/api/models/${created.model.id}`);
+  const afterDelete = await bob.call('GET', '/api/models');
+  assert.ok(!afterDelete.mine.some((m) => m.id === created.model.id));
+});
+
+test('Модели: только админ может добавлять в общий каталог', async () => {
+  const asUser = await bob.call('POST', '/api/models', { name: 'Хочу глобально', global: true }, { raw: true });
+  assert.equal(asUser.status, 403);
+
+  const created = await admin.call('POST', '/api/models', { name: 'Общая модель', global: true });
+  assert.equal(created.model.isGlobal, true);
+  assert.equal(created.model.ownerId, null);
+
+  const list = await bob.call('GET', '/api/models');
+  assert.ok(list.global.some((m) => m.id === created.model.id), 'общая модель видна всем');
+
+  const userDelete = await bob.call('DELETE', `/api/models/${created.model.id}`, undefined, { raw: true });
+  assert.equal(userDelete.status, 403);
+
+  await admin.call('DELETE', `/api/models/${created.model.id}`);
+  const after = await client()('GET', '/api/models');
+  assert.ok(!after.global.some((m) => m.id === created.model.id));
 });
 
 test('test-prompt: пустой промпт отклоняется', async () => {

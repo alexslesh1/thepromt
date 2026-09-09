@@ -25,6 +25,7 @@ import { router as adminRouter } from './routes/admin.js';
 import { router as proRouter } from './routes/pro.js';
 import { router as eduardoRouter } from './routes/eduardo.js';
 import { router as testPromptRouter } from './routes/testPrompt.js';
+import { router as modelsRouter } from './routes/models.js';
 
 export const app = express();
 
@@ -132,6 +133,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/pro', proRouter);
 app.use('/api/eduardo', eduardoRouter);
 app.use('/api/test-prompt', testPromptRouter);
+app.use('/api/models', modelsRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Метод API не найден' });

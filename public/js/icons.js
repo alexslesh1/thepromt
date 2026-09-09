@@ -89,11 +89,18 @@ export function icon(name, { size = 18, filled = false, class: className = '' } 
 }
 
 /**
- * Бейдж верификации Pro — та же «печать», что и у админского значка, но
- * золотого цвета: как разные уровни галочек в других соцсетях.
+ * Бейдж верификации Pro — золотая «печать»-галочка.
  */
 export function proBadge(size = 14) {
   return icon('verified', { size, filled: true, class: 'pro-badge' });
+}
+
+/**
+ * Бейдж админа — отдельная форма (щит), а не та же «печать», что у Pro,
+ * чтобы их нельзя было спутать даже без цвета.
+ */
+export function adminBadge(size = 14) {
+  return icon('shield', { size, filled: true, class: 'admin-badge' });
 }
 
 /**
@@ -155,6 +162,29 @@ function imgWithFallback(src, { size, alt = '', fallback }) {
 }
 
 /**
+ * Плитка пользовательской модели (своя или общая, добавленная через
+ * /api/models): картинка по iconUrl, если она задана и загрузилась,
+ * иначе — плитка с первой буквой названия.
+ */
+export function customModelIcon(model, size = 22) {
+  const tile = document.createElement('span');
+  tile.className = 'model-tile';
+  Object.assign(tile.style, { width: `${size}px`, height: `${size}px`, borderRadius: `${Math.round(size * 0.32)}px` });
+  tile.style.background = 'linear-gradient(140deg, #6b6b76, #6b6b7699)';
+
+  const letterFallback = () => {
+    const span = document.createElement('span');
+    span.textContent = (model?.name || '?').trim().slice(0, 1).toUpperCase();
+    span.style.fontSize = `${Math.round(size * 0.5)}px`;
+    span.style.fontWeight = '700';
+    return span;
+  };
+
+  tile.append(model?.iconUrl ? imgWithFallback(model.iconUrl, { size: size - 6, fallback: letterFallback }) : letterFallback());
+  return tile;
+}
+
+/**
  * Плитка модели: официальная иконка нейросети (если известна) поверх
  * цветного квадрата, иначе — цветной квадрат с абстрактным знаком.
  * @param {{id?: string, color?: string, glyph?: string}} model
@@ -169,7 +199,34 @@ export function modelTile(model, { big = false } = {}) {
   const size = big ? 22 : 14;
   const slug = LOBEHUB_SLUGS[model?.id];
   const glyphIcon = () => icon(model?.glyph ?? 'circle', { size });
-  tile.append(slug ? imgWithFallback(`${LOBEHUB_BASE}${slug}.png`, { size, fallback: glyphIcon }) : glyphIcon());
+
+  if (!slug) {
+    tile.append(glyphIcon());
+    return tile;
+  }
+
+  // Официальные логотипы нейросетей рисуются под свой фон (часто тёмный
+  // или, наоборот, светлый) и плохо видны прямо на цветной плитке —
+  // кладём их на нейтральную светлую подложку. Если картинка не
+  // загрузится, откатываемся на обычный белый глиф прямо на плитке.
+  const plateSize = size + 8;
+  const plate = document.createElement('span');
+  plate.className = 'model-tile-plate';
+  Object.assign(plate.style, {
+    width: `${plateSize}px`,
+    height: `${plateSize}px`,
+    borderRadius: `${Math.round(plateSize * 0.3)}px`,
+  });
+  plate.append(
+    imgWithFallback(`${LOBEHUB_BASE}${slug}.png`, {
+      size: size - 2,
+      fallback: () => {
+        plate.replaceWith(glyphIcon());
+        return document.createElement('span');
+      },
+    }),
+  );
+  tile.append(plate);
   return tile;
 }
 

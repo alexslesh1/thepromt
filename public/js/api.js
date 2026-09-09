@@ -114,4 +114,10 @@ export const api = {
   adminRestorePost: (id) => request('POST', `/api/admin/posts/${id}/restore`),
   moderateUser: (id, data) => request('POST', `/api/admin/users/${id}/moderate`, data),
   adminUsers: (params) => request('GET', `/api/admin/users${query(params)}`),
+
+  models: () => request('GET', '/api/models'),
+  userModels: (username) => request('GET', `/api/models/user/${encodeURIComponent(username)}`),
+  addModel: (data) => request('POST', '/api/models', data),
+  updateModel: (id, data) => request('PATCH', `/api/models/${id}`, data),
+  deleteModel: (id) => request('DELETE', `/api/models/${id}`),
 };

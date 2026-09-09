@@ -53,12 +53,12 @@ export function normalizeEmail(value) {
   return email;
 }
 
-const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+const USERNAME_RE = /^[a-z0-9_]{4,20}$/;
 
 export function normalizeUsername(value) {
   const username = String(value ?? '').trim().toLowerCase().replace(/^@/, '');
   if (!USERNAME_RE.test(username)) {
-    throw badRequest('Никнейм: 3–20 символов, только латиница, цифры и _');
+    throw badRequest('Никнейм: 4–20 символов, только латиница, цифры и _');
   }
   return username;
 }

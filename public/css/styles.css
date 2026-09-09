@@ -365,6 +365,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   display: grid; place-items: center; color: #fff;
 }
 .model-tile.big { width: 38px; height: 38px; border-radius: 11px; }
+.model-tile-plate { display: grid; place-items: center; flex: none; background: #f4f4f6; }
 
 .level-pill {
   display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 999px;
@@ -578,8 +579,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .theme-toggle button:hover { color: var(--text); }
 .theme-toggle button.on { background: var(--gradient); color: #fff; }
 
-.verified { color: var(--accent); flex: none; }
 .pro-badge { color: var(--save); flex: none; }
+.admin-badge { color: var(--accent); flex: none; }
 
 .pro-plan-card {
   border: 1px solid rgba(242, 176, 30, .35); border-radius: var(--radius-md);
@@ -630,7 +631,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ------------------------------ Профиль -------------------------------- */
 
-.profile-banner { height: 210px; background: var(--gradient); background-size: cover; background-position: center; border-radius: var(--radius) var(--radius) 0 0; }
+.profile-banner { height: 210px; background: var(--gradient); background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: var(--radius) var(--radius) 0 0; }
 .profile-head { padding: 0 20px 18px; background: var(--bg-card); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
 .profile-top { display: flex; align-items: flex-end; justify-content: space-between; margin-top: -64px; margin-bottom: 14px; gap: 12px; }
 .profile-name { font-size: 22px; font-weight: 750; margin: 0; letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; }

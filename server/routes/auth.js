@@ -207,8 +207,8 @@ router.get(
     let username;
     try {
       username = normalizeUsername(req.query.username);
-    } catch {
-      return res.json({ available: false, reason: 'Некорректный никнейм' });
+    } catch (err) {
+      return res.json({ available: false, reason: err.message ?? 'Некорректный никнейм' });
     }
     if (RESERVED_USERNAMES.has(username)) {
       return res.json({ available: false, reason: 'Никнейм зарезервирован' });

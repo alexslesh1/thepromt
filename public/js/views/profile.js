@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { isAdmin } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, emptyState, frag, h, modal, plural, pluralWord, promptDialog, spinner, toast } from '../dom.js';
-import { icon, proBadge } from '../icons.js';
+import { adminBadge, customModelIcon, icon, proBadge } from '../icons.js';
 import { feedList } from '../components/post.js';
 import { requireAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
@@ -207,9 +207,7 @@ export async function profileView({ params, query }) {
             'h2',
             { class: 'profile-name' },
             current.displayName,
-            current.role === 'admin'
-              ? icon('verified', { size: 19, filled: true, class: 'verified' })
-              : null,
+            current.role === 'admin' ? adminBadge(19) : null,
             current.isPro ? proBadge(19) : null,
           ),
           h('div', { class: 'profile-handle', text: `@${current.username}` }),
@@ -225,6 +223,29 @@ export async function profileView({ params, query }) {
   const profileHead = h('div', {});
   main.append(profileHead);
   render(user);
+
+  const modelsSlot = h('div', {});
+  main.append(modelsSlot);
+  api
+    .userModels(user.username)
+    .then(({ items: models }) => {
+      if (!models.length) return;
+      modelsSlot.replaceChildren(
+        h(
+          'div',
+          { class: 'card', style: { margin: '0 0 14px' } },
+          h('h3', { class: 'section-title', style: { margin: '0 0 10px' }, text: 'Модели' }),
+          h(
+            'div',
+            { style: { display: 'flex', flexWrap: 'wrap', gap: '10px' } },
+            ...models.map((model) =>
+              h('div', { class: 'model-badge' }, customModelIcon(model, 20), h('span', { text: model.name })),
+            ),
+          ),
+        ),
+      );
+    })
+    .catch(() => {});
 
   const items = [
     { id: 'posts', label: 'Промпты и репосты' },

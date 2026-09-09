@@ -205,7 +205,7 @@ await step('лайк и комментарий', async () => {
   const after = (await likeBtn.innerText()).trim();
   if (before === after) throw new Error(`счётчик лайков не изменился (${before})`);
 
-  await target.locator('.action.comment').click();
+  await target.locator('.action.comment-btn').click();
   await page.waitForURL(/\/post\/\d+/);
   await page.locator('.comment-form textarea').fill('Комментарий из автотеста — работает!');
   await page.getByRole('button', { name: 'Отправить', exact: true }).click();
@@ -373,6 +373,33 @@ await step('Pro: подписка активирует бейдж рядом с 
   if (expectBadge && !hasBadgeAfter) throw new Error('бейдж Pro не появился после подписки');
   if (!expectBadge && hasBadgeAfter) throw new Error('бейдж Pro не исчез после отмены');
   void hadBadgeBefore;
+});
+
+await step('Модели: своя модель в настройках/профиле, общая — из админки', async () => {
+  const uniqueName = `Тестовая модель ${Date.now()}`;
+  await page.goto(`${base}/settings`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('form');
+  await page.locator('input[placeholder="Название модели"]').fill(uniqueName);
+  await page.getByRole('button', { name: 'Добавить', exact: true }).click();
+  await page.waitForSelector('.toast');
+  const settingsText = await page.locator('#app').innerText();
+  if (!settingsText.includes(uniqueName)) throw new Error('добавленная модель не отображается в настройках');
+  await shot('24-settings-models');
+
+  await page.goto(`${base}/u/admin`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.profile-head');
+  const profileText = await page.locator('#app').innerText();
+  if (!profileText.includes(uniqueName)) throw new Error('своя модель не отображается на странице профиля');
+
+  const globalName = `Общий каталог ${Date.now()}`;
+  await page.goto(`${base}/admin?tab=models`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('form');
+  await page.locator('input[placeholder="Название модели"]').fill(globalName);
+  await page.getByRole('button', { name: 'Добавить в каталог' }).click();
+  await page.waitForSelector('.toast');
+  const adminText = await page.locator('#app').innerText();
+  if (!adminText.includes(globalName)) throw new Error('общая модель не появилась в каталоге админки');
+  await shot('25-admin-models');
 });
 
 await step('редактор обрезки: аватар и баннер', async () => {

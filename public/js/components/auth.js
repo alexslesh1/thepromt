@@ -198,7 +198,7 @@ function codeStep(close, requested) {
 /** Экран 3: никнейм и отображаемое имя. */
 function profileStep(close) {
   const error = h('p', { class: 'error-text', style: { display: 'none' } });
-  const hint = h('div', { class: 'hint', text: 'Латиница, цифры и _, от 3 до 20 символов' });
+  const hint = h('div', { class: 'hint', text: 'Латиница, цифры и _, от 4 до 20 символов' });
   const username = h('input', {
     class: 'input',
     placeholder: 'prompt_master',
@@ -212,8 +212,8 @@ function profileStep(close) {
   username.addEventListener('input', () => {
     clearTimeout(checkTimer);
     const value = username.value.trim();
-    if (value.length < 3) {
-      hint.textContent = 'Латиница, цифры и _, от 3 до 20 символов';
+    if (value.length < 4) {
+      hint.textContent = 'Латиница, цифры и _, от 4 до 20 символов';
       return;
     }
     checkTimer = setTimeout(async () => {

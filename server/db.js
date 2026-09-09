@@ -213,6 +213,17 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
+
+-- owner_id NULL — модель в общем каталоге (её видят все); иначе — личная
+-- модель пользователя, добавленная им в свой профиль.
+CREATE TABLE IF NOT EXISTS models (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  icon_url   TEXT,
+  owner_id   INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_models_owner ON models(owner_id);
 `;
 
 db.exec(SCHEMA);

@@ -1,16 +1,21 @@
 import { config } from './config.js';
 import { get, run } from './db.js';
-import { forbidden, isoPlus, nowIso, randomToken, unauthorized } from './util.js';
+import { forbidden, isoPlus, nowIso, randomToken, sha256, unauthorized } from './util.js';
 
 const SESSION_TTL_MS = config.session.ttlDays * 24 * 60 * 60 * 1000;
 
+/**
+ * В БД хранится только хеш токена сессии (как и хеш OTP-кода), а не сам
+ * токен — чтобы утечка базы не давала сразу перехватить активные сессии.
+ * Реальный (нехешированный) токен уходит только в httpOnly-куку.
+ */
 export function createSession(userId, userAgent = '') {
   const token = randomToken(32);
   run(
     `INSERT INTO sessions (token, user_id, user_agent, expires_at)
      VALUES ($token, $userId, $userAgent, $expiresAt)`,
     {
-      token,
+      token: sha256(token),
       userId,
       userAgent: String(userAgent).slice(0, 200),
       expiresAt: isoPlus(SESSION_TTL_MS),
@@ -20,7 +25,7 @@ export function createSession(userId, userAgent = '') {
 }
 
 export function destroySession(token) {
-  if (token) run('DELETE FROM sessions WHERE token = $token', { token });
+  if (token) run('DELETE FROM sessions WHERE token = $token', { token: sha256(token) });
 }
 
 export function setSessionCookie(res, token) {
@@ -43,7 +48,7 @@ export function userBySession(token) {
     `SELECT u.* FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = $token AND s.expires_at > $now`,
-    { token, now: nowIso() },
+    { token: sha256(token), now: nowIso() },
   );
   return row;
 }
