@@ -61,6 +61,7 @@ export const api = {
   logout: () => request('POST', '/api/auth/logout'),
   logoutAll: () => request('POST', '/api/auth/logout-all'),
   usernameAvailable: (username) => request('GET', `/api/auth/username-available${query({ username })}`),
+  oauthProviders: () => request('GET', '/api/auth/oauth/providers'),
 
   feed: (params, signal) => request('GET', `/api/posts${query(params)}`, undefined, { signal }),
   post: (id) => request('GET', `/api/posts/${id}`),
@@ -96,6 +97,14 @@ export const api = {
 
   notifications: (params) => request('GET', `/api/notifications${query(params)}`),
   readNotifications: (id) => request('POST', '/api/notifications/read', id ? { id } : {}),
+
+  subscribePro: () => request('POST', '/api/pro/subscribe'),
+  cancelPro: () => request('POST', '/api/pro/cancel'),
+
+  eduardoUsage: () => request('GET', '/api/eduardo/usage'),
+  eduardoHistory: () => request('GET', '/api/eduardo/history'),
+  eduardoText: (tool, prompt) => request('POST', '/api/eduardo/text', { tool, prompt }),
+  eduardoImage: (prompt) => request('POST', '/api/eduardo/image', { prompt }),
 
   adminStats: () => request('GET', '/api/admin/stats'),
   adminReports: (params) => request('GET', `/api/admin/reports${query(params)}`),

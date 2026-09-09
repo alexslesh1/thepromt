@@ -3,7 +3,57 @@
 import { api } from '../api.js';
 import { setUser, state } from '../state.js';
 import { frag, h, modal, toast } from '../dom.js';
-import { icon } from '../icons.js';
+import { icon, oauthProviderIcon } from '../icons.js';
+
+/**
+ * Подписи и порядок для строки «Войти через…». `real: true` — провайдеры со
+ * стандартным consumer OAuth2 (GitHub, Google, Microsoft, Discord): если для
+ * них в .env заданы ключи, кнопка ведёт на настоящий вход. `real: false` —
+ * OpenAI и Claude: у них нет публичного OAuth «Войти через…» для сторонних
+ * сайтов, кнопки декоративные и по клику честно объясняют это.
+ */
+const OAUTH_BUTTONS = [
+  { id: 'github', label: 'GitHub', real: true },
+  { id: 'google', label: 'Google', real: true },
+  { id: 'microsoft', label: 'Microsoft', real: true },
+  { id: 'discord', label: 'Discord', real: true },
+  { id: 'openai', label: 'ChatGPT', real: false },
+  { id: 'anthropic', label: 'Claude', real: false },
+];
+
+/** Строка кнопок входа через сторонние сервисы — показывается на первом шаге. */
+function oauthRow() {
+  const items = OAUTH_BUTTONS.map((btn) => {
+    const info = state.oauthProviders.find((p) => p.id === btn.id);
+    const configured = !!info?.configured;
+
+    const el = h(
+      'button',
+      {
+        type: 'button',
+        class: `oauth-btn${configured ? '' : ' muted'}`,
+        title: configured ? `Войти через ${btn.label}` : info?.reason ?? 'Способ входа пока не настроен на сервере',
+        onClick: () => {
+          if (configured) {
+            location.href = `/api/auth/oauth/${btn.id}/start`;
+            return;
+          }
+          toast(info?.reason ?? `Вход через ${btn.label} пока не настроен на сервере.`);
+        },
+      },
+      oauthProviderIcon(btn.id, 18),
+      h('span', { text: btn.label }),
+    );
+    return el;
+  });
+
+  return h(
+    'div',
+    { class: 'oauth-block' },
+    h('div', { class: 'oauth-grid' }, items),
+    h('div', { class: 'oauth-divider' }, h('span', { text: 'или почтой' })),
+  );
+}
 
 /** Экран 1: ввод email. */
 function emailStep(close, prefill = '') {
@@ -48,6 +98,7 @@ function emailStep(close, prefill = '') {
       h('h2', { text: 'Вход в ThePrompt' }),
       h('button', { class: 'icon-btn', onClick: () => close(), 'aria-label': 'Закрыть' }, icon('close', { size: 18 })),
     ),
+    oauthRow(),
     h('p', {
       class: 'lead',
       text: 'Введите почту — пришлём одноразовый код. Пароль придумывать не нужно.',
@@ -235,6 +286,22 @@ export async function openAuth(prefillEmail = '') {
   const result = await modal((close) => {
     const box = h('div', { style: { display: 'contents' } });
     box.append(emailStep(close, prefillEmail));
+    activeBox = box;
+    return box;
+  });
+  activeBox = null;
+  return result === true;
+}
+
+/**
+ * Открывает модалку сразу на шаге «Создайте профиль» — для пользователя,
+ * у которого уже есть сессия (например, только что вошёл через OAuth), но
+ * нет никнейма. Повторно запрашивать email/код не нужно.
+ */
+export async function openCompleteProfile() {
+  const result = await modal((close) => {
+    const box = h('div', { style: { display: 'contents' } });
+    box.append(profileStep(close));
     activeBox = box;
     return box;
   });

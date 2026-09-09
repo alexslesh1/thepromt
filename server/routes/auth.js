@@ -9,7 +9,7 @@ import {
   requireSession,
   setSessionCookie,
 } from '../auth.js';
-import { privateUser, userByEmail, userByUsername, notify } from '../store.js';
+import { findOrCreateUserByEmail, privateUser, userByEmail, userByUsername, notify } from '../store.js';
 import { LIMITS } from '../constants.js';
 import {
   badRequest,
@@ -135,19 +135,7 @@ router.post(
     const user = transaction(() => {
       run('UPDATE otp_codes SET consumed_at = $now WHERE id = $id', { id: record.id, now: nowIso() });
       run('DELETE FROM otp_codes WHERE email = $email AND consumed_at IS NULL', { email });
-
-      let row = userByEmail(email);
-      if (!row) {
-        const isFirstUser = get('SELECT COUNT(*) AS n FROM users').n === 0;
-        const isListedAdmin = config.adminEmails.includes(email);
-        const role = isListedAdmin || (config.adminEmails.length === 0 && isFirstUser) ? 'admin' : 'user';
-        run('INSERT INTO users (email, role) VALUES ($email, $role)', { email, role });
-        row = userByEmail(email);
-      } else if (config.adminEmails.includes(email) && row.role !== 'admin') {
-        run("UPDATE users SET role = 'admin' WHERE id = $id", { id: row.id });
-        row = userByEmail(email);
-      }
-      return row;
+      return findOrCreateUserByEmail(email, { adminEmails: config.adminEmails });
     });
 
     if (user.status === 'banned') {

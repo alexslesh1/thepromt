@@ -16,7 +16,7 @@ import {
   timeEl,
   toast,
 } from '../dom.js';
-import { icon, modelTile } from '../icons.js';
+import { icon, modelTile, proBadge } from '../icons.js';
 import { requireAuth } from './auth.js';
 import { openComposer } from './composer.js';
 
@@ -361,6 +361,7 @@ export function postCard(post, options = {}) {
           { class: 'post-meta' },
           h('a', { class: 'name', href: `/u/${post.author.username}`, text: post.author.displayName }),
           post.author.role === 'admin' ? h('span', { class: 'admin-tag', text: 'админ' }) : null,
+          post.author.isPro ? proBadge(15) : null,
           h('span', { class: 'handle', text: `@${post.author.username}` }),
           h('span', { class: 'dot', text: '·' }),
           timeEl(post.createdAt),

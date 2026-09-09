@@ -12,6 +12,48 @@
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
+import path from 'node:path';
+import zlib from 'node:zlib';
+
+/** Крошечный сплошного цвета PNG — без внешних зависимостей, только для теста загрузки/обрезки. */
+function makeTestPng(filePath, { width = 40, height = 30, rgb = [0x4f, 0x66, 0xd9] } = {}) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (buf) => {
+    let c = 0xffffffff;
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const typeData = Buffer.concat([Buffer.from(type), data]);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(typeData));
+    return Buffer.concat([len, typeData, crc]);
+  };
+
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(width).fill(rgb).flat())]);
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  const idat = zlib.deflateSync(raw);
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.writeUInt8(8, 8); // bit depth
+  ihdr.writeUInt8(2, 9); // color type: RGB
+
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', idat),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  fs.writeFileSync(filePath, png);
+}
 
 const S = process.env.SHOTS ?? '.';
 const base = process.env.BASE ?? 'http://localhost:3000';
@@ -101,6 +143,18 @@ await step('обзор/поиск', async () => {
   await page.goto(`${base}/explore?q=ревью`, { waitUntil: 'networkidle' });
   await page.waitForSelector('.post', { timeout: 8000 });
   await shot('05-explore');
+});
+
+await step('OAuth: неотключённый провайдер честно объясняет ограничение', async () => {
+  await page.goto(base, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Войти' }).first().click();
+  await page.waitForSelector('.modal .oauth-grid');
+  await shot('06-oauth-buttons');
+  await page.locator('.oauth-btn', { hasText: 'Claude' }).click();
+  await page.waitForSelector('.toast');
+  const toastText = await page.locator('.toast').last().innerText();
+  if (!toastText.includes('нет публичного OAuth')) throw new Error(`неожиданный текст тоста: ${toastText}`);
+  await page.keyboard.press('Escape');
 });
 
 // ---- Авторизация через OTP ----
@@ -267,20 +321,94 @@ await step('раздел «Сообщения»', async () => {
   await shot('18-messages');
 });
 
-await step('помощник Eduardo собирает промпт', async () => {
+await step('раздел Eduardo: вопрос-ответ, код и лимит изображений', async () => {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.locator('.side-card.ai').click();
-  await page.waitForSelector('.modal');
-  await page.locator('.modal input').first().fill('лендинг курса по фотографии');
-  await page.waitForTimeout(300);
-  const preview = await page.locator('.modal pre').innerText();
-  if (!preview.includes('лендинг курса по фотографии')) throw new Error('заготовка не обновилась');
-  await shot('19-assistant');
-  await page.getByRole('button', { name: 'Открыть в композере' }).click();
-  await page.waitForSelector('.modal textarea.mono');
-  const draft = await page.locator('.modal textarea.mono').inputValue();
-  if (!draft.includes('Формат ответа')) throw new Error('промпт не перенесён в композер');
-  await page.keyboard.press('Escape');
+  await page.waitForURL(/\/eduardo/);
+  await page.waitForSelector('.eduardo-usage');
+  await shot('19-eduardo');
+
+  await page.locator('form textarea').fill('Что такое ThePrompt?');
+  await page.locator('form button[type=submit]').click();
+  await page.waitForSelector('.eduardo-result', { timeout: 8000 });
+  const qaText = await page.locator('.eduardo-text').innerText();
+  if (!qaText.includes('Демо-ответ Eduardo')) throw new Error('текстовый результат пуст или не помечен демо-режимом');
+  await shot('20-eduardo-qa');
+
+  await page.getByRole('button', { name: 'Код', exact: true }).click();
+  await page.locator('form textarea').fill('Функция сортировки массива на JS');
+  await page.locator('form button[type=submit]').click();
+  await page.waitForSelector('.eduardo-result', { timeout: 8000 });
+  if (!(await page.locator('.eduardo-text').innerText()).includes('```')) throw new Error('код не сгенерирован');
+
+  // Один бесплатный лимит на изображения — второй запрос должен отказать с апсейлом на Pro.
+  await page.getByRole('button', { name: 'Изображение', exact: true }).click();
+  await page.locator('form textarea').fill('Киберпанк город ночью, неон');
+  await page.locator('form button[type=submit]').click();
+  await page.waitForSelector('.eduardo-image', { timeout: 8000 });
+  await shot('21-eduardo-image');
+
+  await page.locator('form textarea').fill('Ещё одно изображение сверх лимита');
+  await page.locator('form button[type=submit]').click();
+  await page.waitForSelector('.error-text', { timeout: 8000 });
+  const limitError = await page.locator('.error-text').innerText();
+  if (!limitError.includes('Лимит')) throw new Error('лимит изображений не сработал');
+  if (!(await page.locator('.error-text button', { hasText: 'Оформить Pro' }).count())) {
+    throw new Error('нет апсейла на Pro при исчерпанном лимите');
+  }
+
+  const history = await page.locator('#app').innerText();
+  if (!history.includes('История запросов')) throw new Error('блок истории не отрисован');
+});
+
+await step('Pro: подписка активирует бейдж рядом с именем', async () => {
+  await page.goto(`${base}/u/admin`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.profile-head');
+  const hadBadgeBefore = await page.locator('.profile-name .pro-badge').count();
+
+  await page.locator('.side-card.pro').click();
+  await page.waitForSelector('.pro-plan-card');
+  await shot('23-pro-modal');
+  const action = page.getByRole('button', { name: /Оформить за|Отменить подписку/ });
+  const label = await action.innerText();
+  await action.click();
+  await page.waitForSelector('.toast');
+
+  await page.goto(`${base}/u/admin`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.profile-head');
+  const hasBadgeAfter = await page.locator('.profile-name .pro-badge').count();
+  const expectBadge = label.includes('Оформить');
+  if (expectBadge && !hasBadgeAfter) throw new Error('бейдж Pro не появился после подписки');
+  if (!expectBadge && hasBadgeAfter) throw new Error('бейдж Pro не исчез после отмены');
+  void hadBadgeBefore;
+});
+
+await step('редактор обрезки: аватар и баннер', async () => {
+  await page.goto(`${base}/settings`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('form');
+
+  const testPng = path.join(S, 'ui-test-avatar.png');
+  if (!fs.existsSync(testPng)) makeTestPng(testPng);
+
+  const [fc] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.locator('form button', { hasText: 'Загрузить' }).first().click(),
+  ]);
+  await fc.setFiles(testPng);
+  await page.waitForSelector('.cropper-stage.round', { timeout: 6000 });
+  await shot('24-cropper-avatar');
+
+  await page.locator('.cropper-zoom').fill('180');
+  const box = await page.locator('.cropper-stage').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 10, { steps: 4 });
+  await page.mouse.up();
+
+  await page.locator('.modal').getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.waitForSelector('.toast');
+  const savedToast = await page.locator('.toast').last().innerText();
+  if (!savedToast.includes('сохранено')) throw new Error(`превью не подтвердило сохранение: ${savedToast}`);
 });
 
 await step('статические страницы и Ctrl+K', async () => {

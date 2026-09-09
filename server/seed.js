@@ -201,6 +201,15 @@ function seed() {
     users.set(user.username, user);
   }
 
+  // У одного демо-автора уже активна подписка Pro — чтобы бейдж было видно
+  // в ленте и профиле сразу после сидирования, без ручной активации.
+  const proUser = users.get('nika_prompts');
+  if (proUser && !proUser.is_pro) {
+    run("UPDATE users SET is_pro = 1, pro_since = datetime('now'), pro_expires_at = datetime('now', '+30 days') WHERE id = $id", {
+      id: proUser.id,
+    });
+  }
+
   let created = 0;
   for (const data of POSTS) {
     const author = users.get(data.author);

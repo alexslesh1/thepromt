@@ -89,8 +89,75 @@ export function icon(name, { size = 18, filled = false, class: className = '' } 
 }
 
 /**
- * Плитка модели: цветной квадрат с абстрактным знаком.
- * @param {{color?: string, glyph?: string}} model
+ * Бейдж верификации Pro — та же «печать», что и у админского значка, но
+ * золотого цвета: как разные уровни галочек в других соцсетях.
+ */
+export function proBadge(size = 14) {
+  return icon('verified', { size, filled: true, class: 'pro-badge' });
+}
+
+/**
+ * Официальные иконки нейросетей и сервисов — берём готовыми картинками
+ * (lobehub для нейросетей, Simple Icons для площадок входа), а не рисуем
+ * логотипы брендов сами. Если картинка не загрузилась (сеть недоступна),
+ * `<img onerror>` подменяет её нашей абстрактной плиткой — интерфейс не ломается.
+ */
+const LOBEHUB_BASE = 'https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/';
+const LOBEHUB_SLUGS = {
+  chatgpt: 'openai',
+  dalle: 'openai',
+  claude: 'claude-color',
+  gemini: 'gemini-color',
+  llama: 'meta-color',
+  midjourney: 'midjourney',
+  'stable-diffusion': 'stability-color',
+  deepseek: 'deepseek-color',
+  suno: 'suno',
+  sora: 'openai',
+  flux: 'flux',
+  ollama: 'ollama',
+};
+
+const SIMPLEICONS_SLUGS = {
+  github: 'github',
+  google: 'google',
+  microsoft: 'microsoft',
+  discord: 'discord',
+};
+
+/**
+ * img с откатом на переданный фолбэк-узел, если картинка не загрузилась —
+ * или зависла: у внешних CDN «error» иногда не срабатывает быстро (обрыв
+ * соединения без явного отказа), поэтому есть и таймаут.
+ * Без h() из dom.js — dom.js сам импортирует icon() отсюда, а циклический
+ * импорт функции здесь не нужен: DOM API хватает.
+ */
+function imgWithFallback(src, { size, alt = '', fallback }) {
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = alt;
+  img.loading = 'lazy';
+  img.referrerPolicy = 'no-referrer';
+  Object.assign(img.style, { width: `${size}px`, height: `${size}px`, objectFit: 'contain', display: 'block' });
+
+  let settled = false;
+  const swap = () => {
+    if (settled || !img.isConnected) return;
+    settled = true;
+    img.replaceWith(fallback());
+  };
+  img.addEventListener('error', swap, { once: true });
+  img.addEventListener('load', () => {
+    settled = true;
+  });
+  setTimeout(swap, 4000);
+  return img;
+}
+
+/**
+ * Плитка модели: официальная иконка нейросети (если известна) поверх
+ * цветного квадрата, иначе — цветной квадрат с абстрактным знаком.
+ * @param {{id?: string, color?: string, glyph?: string}} model
  */
 export function modelTile(model, { big = false } = {}) {
   const tile = document.createElement('span');
@@ -98,8 +165,36 @@ export function modelTile(model, { big = false } = {}) {
   const color = model?.color ?? '#8a8a8a';
   tile.style.background = `linear-gradient(140deg, ${color}, ${color}99)`;
   tile.style.boxShadow = `0 4px 14px ${color}45`;
-  tile.append(icon(model?.glyph ?? 'circle', { size: big ? 20 : 13 }));
+
+  const size = big ? 22 : 14;
+  const slug = LOBEHUB_SLUGS[model?.id];
+  const glyphIcon = () => icon(model?.glyph ?? 'circle', { size });
+  tile.append(slug ? imgWithFallback(`${LOBEHUB_BASE}${slug}.png`, { size, fallback: glyphIcon }) : glyphIcon());
   return tile;
+}
+
+/**
+ * Иконка провайдера входа (GitHub, Google, Microsoft, Discord — Simple Icons;
+ * ChatGPT/Claude — lobehub). При ошибке загрузки откатывается на плитку
+ * с первой буквой названия.
+ */
+export function oauthProviderIcon(providerId, size = 18) {
+  const fallback = () => {
+    const span = document.createElement('span');
+    span.className = 'oauth-fallback';
+    span.style.width = `${size}px`;
+    span.style.height = `${size}px`;
+    span.textContent = (providerId[0] || '?').toUpperCase();
+    return span;
+  };
+
+  if (providerId === 'openai' || providerId === 'anthropic') {
+    const slug = providerId === 'openai' ? 'openai' : 'claude-color';
+    return imgWithFallback(`${LOBEHUB_BASE}${slug}.png`, { size, fallback });
+  }
+  const slug = SIMPLEICONS_SLUGS[providerId];
+  if (!slug) return fallback();
+  return imgWithFallback(`https://cdn.simpleicons.org/${slug}`, { size, fallback });
 }
 
 /** Логотип ThePrompt — скруглённый квадрат с синим градиентом и буквой P. */

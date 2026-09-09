@@ -13,6 +13,8 @@ process.env.DB_FILE = tmpDb;
 process.env.NODE_ENV = 'test';
 process.env.ADMIN_EMAILS = 'admin@example.com';
 process.env.SESSION_SECRET = 'test-secret';
+process.env.GITHUB_CLIENT_ID = 'test-github-client';
+process.env.GITHUB_CLIENT_SECRET = 'test-github-secret';
 
 const { app } = await import('../server/index.js');
 const { closeDb } = await import('../server/db.js');
@@ -95,6 +97,101 @@ test('никнейм нельзя занять дважды', async () => {
   const res = await call('POST', '/api/auth/profile', { username: 'alice' }, { raw: true });
   assert.equal(res.status, 400);
   assert.equal(res.data.code, 'username_taken');
+});
+
+test('OAuth: список провайдеров честно помечает, что настроено', async () => {
+  const list = await client()('GET', '/api/auth/oauth/providers');
+  const github = list.providers.find((p) => p.id === 'github');
+  const google = list.providers.find((p) => p.id === 'google');
+  const openai = list.providers.find((p) => p.id === 'openai');
+  assert.equal(github.configured, true, 'GitHub настроен тестовыми переменными окружения');
+  assert.equal(google.configured, false, 'Google не настроен');
+  assert.equal(openai.configured, false);
+  assert.ok(openai.reason.includes('нет публичного OAuth'));
+});
+
+test('OAuth: непонятный/неотключённый провайдер редиректит с понятной ошибкой', async () => {
+  const res = await fetch(`${base}/api/auth/oauth/openai/start`, { redirect: 'manual' });
+  assert.equal(res.status, 302);
+  const location = new URL(res.headers.get('location'), base);
+  assert.ok(location.searchParams.get('oauthError')?.includes('нет публичного OAuth'));
+});
+
+test('OAuth: полный вход через GitHub заводит аккаунт и открывает сессию', async () => {
+  const startRes = await fetch(`${base}/api/auth/oauth/github/start`, { redirect: 'manual' });
+  assert.equal(startRes.status, 302);
+  const authorizeUrl = new URL(startRes.headers.get('location'));
+  assert.equal(authorizeUrl.hostname, 'github.com');
+  const state = authorizeUrl.searchParams.get('state');
+  assert.ok(state);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    if (href.startsWith('https://github.com/login/oauth/access_token')) {
+      return new Response(JSON.stringify({ access_token: 'fake-gh-token', token_type: 'bearer' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (href === 'https://api.github.com/user') {
+      return new Response(
+        JSON.stringify({ id: 555444, login: 'octoprompt', name: 'Octo Prompt', avatar_url: 'https://example.com/a.png', email: 'octo@example.com' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  };
+
+  let callbackRes;
+  try {
+    callbackRes = await fetch(
+      `${base}/api/auth/oauth/github/callback?code=fake-code&state=${encodeURIComponent(state)}`,
+      { redirect: 'manual' },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(callbackRes.status, 302);
+  assert.equal(new URL(callbackRes.headers.get('location'), base).pathname, '/');
+  const cookie = callbackRes.headers.getSetCookie?.()?.[0]?.split(';')[0];
+  assert.ok(cookie, 'сессия должна открыться cookie');
+
+  const me = await fetch(`${base}/api/auth/me`, { headers: { cookie } }).then((r) => r.json());
+  assert.equal(me.user.email, 'octo@example.com');
+  assert.equal(me.user.needsProfile, true, 'новый пользователь ещё не выбрал никнейм');
+  assert.equal(me.user.avatarUrl, 'https://example.com/a.png', 'аватар подтянулся из профиля GitHub');
+
+  // Повторный вход тем же GitHub-аккаунтом должен попасть в тот же локальный аккаунт.
+  const state2 = new URL((await fetch(`${base}/api/auth/oauth/github/start`, { redirect: 'manual' })).headers.get('location')).searchParams.get('state');
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    if (href.startsWith('https://github.com/login/oauth/access_token')) {
+      return new Response(JSON.stringify({ access_token: 'fake-gh-token-2' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (href === 'https://api.github.com/user') {
+      return new Response(
+        JSON.stringify({ id: 555444, login: 'octoprompt', name: 'Octo Prompt', avatar_url: 'https://example.com/a.png', email: 'octo@example.com' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  };
+  let callback2;
+  try {
+    callback2 = await fetch(`${base}/api/auth/oauth/github/callback?code=x&state=${encodeURIComponent(state2)}`, {
+      redirect: 'manual',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const cookie2 = callback2.headers.getSetCookie?.()?.[0]?.split(';')[0];
+  const me2 = await fetch(`${base}/api/auth/me`, { headers: { cookie: cookie2 } }).then((r) => r.json());
+  assert.equal(me2.user.id, me.user.id, 'второй вход через тот же GitHub-аккаунт — тот же пользователь');
 });
 
 test('публикация промта со всеми полями', async () => {
@@ -603,9 +700,108 @@ test('справочники для интерфейса', async () => {
   assert.ok(meta.categories.length >= 5);
   assert.ok(meta.sortOptions.some((s) => s.id === 'new'));
   assert.ok(meta.models.every((m) => m.short && m.color && m.glyph));
+  assert.equal(meta.pro.priceLabel, '$10 / месяц');
+  assert.equal(meta.eduardo.freeTextLimit, 5);
+  assert.equal(meta.eduardo.freeImageLimit, 1);
+  assert.equal(meta.eduardo.proTextLimit, 20);
+  assert.equal(meta.eduardo.proImageLimit, 3);
 
   const sidebar = await client()('GET', '/api/sidebar');
   assert.ok(Array.isArray(sidebar.topCategories));
+});
+
+test('Pro: подписка активирует флаг и бейдж на постах, отмена снимает', async () => {
+  const before = await bob.call('GET', '/api/auth/me');
+  assert.equal(before.user.isPro, false);
+
+  const sub = await bob.call('POST', '/api/pro/subscribe');
+  assert.equal(sub.user.isPro, true);
+  assert.ok(sub.user.proExpiresAt);
+
+  // Бейдж должен появиться и в чужом просмотре профиля, и на постах автора.
+  const publicProfile = await client()('GET', '/api/users/bob');
+  assert.equal(publicProfile.user.isPro, true);
+
+  const created = await bob.call('POST', '/api/posts', {
+    promptText: 'Промпт от Pro-автора для проверки бейджа',
+    modelFamily: 'chatgpt',
+  });
+  assert.equal(created.post.author.isPro, true);
+
+  const cancel = await bob.call('POST', '/api/pro/cancel');
+  assert.equal(cancel.user.isPro, false);
+  assert.equal(cancel.user.proExpiresAt, null);
+
+  const afterCancel = await bob.call('GET', `/api/posts/${created.post.id}`);
+  assert.equal(afterCancel.post.author.isPro, false);
+});
+
+test('Pro: подписка требует входа', async () => {
+  const res = await client()('POST', '/api/pro/subscribe', undefined, { raw: true });
+  assert.equal(res.status, 401);
+});
+
+test('Eduardo: текстовый лимит free-пользователя и демо-режим', async () => {
+  const created = await signUp('eduardo-free@example.com', 'eduardo_free', 'Едуардо Фри');
+
+  const usageBefore = await created.call('GET', '/api/eduardo/usage');
+  assert.equal(usageBefore.text.limit, 5);
+  assert.equal(usageBefore.text.used, 0);
+  assert.equal(usageBefore.pro, false);
+
+  let last;
+  for (let i = 0; i < 5; i += 1) {
+    last = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: `Вопрос номер ${i}` });
+    assert.equal(last.simulated, true, 'без ANTHROPIC_API_KEY ответ всегда демо-режим');
+    assert.ok(last.result.includes('Демо-ответ Eduardo'));
+  }
+  assert.equal(last.usage.text.used, 5);
+  assert.equal(last.usage.text.remaining, 0);
+
+  const overLimit = await created.call('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Ещё один вопрос' }, { raw: true });
+  assert.equal(overLimit.status, 402);
+  assert.equal(overLimit.data.code, 'limit_reached');
+
+  const history = await created.call('GET', '/api/eduardo/history');
+  assert.equal(history.items.length, 5);
+  assert.equal(history.items[0].tool, 'qa');
+});
+
+test('Eduardo: генерация теста, кода и изображения (демо-режим)', async () => {
+  const created = await signUp('eduardo-tools@example.com', 'eduardo_tools', 'Едуардо Тулс');
+
+  const testResult = await created.call('POST', '/api/eduardo/text', { tool: 'test', prompt: 'Столицы Европы' });
+  assert.ok(testResult.result.includes('демо-заглушка') || testResult.result.toLowerCase().includes('демо'));
+
+  const codeResult = await created.call('POST', '/api/eduardo/text', { tool: 'code', prompt: 'Функция сортировки массива' });
+  assert.ok(codeResult.result.includes('```'));
+
+  const badTool = await created.call('POST', '/api/eduardo/text', { tool: 'nonsense', prompt: 'Что-то' }, { raw: true });
+  assert.equal(badTool.status, 400);
+
+  const image = await created.call('POST', '/api/eduardo/image', { prompt: 'Киберпанк-город ночью' });
+  assert.equal(image.simulated, true);
+  assert.ok(image.url.startsWith('/uploads/'));
+  assert.equal(image.usage.image.used, 1);
+  assert.equal(image.usage.image.limit, 1);
+
+  const overImageLimit = await created.call('POST', '/api/eduardo/image', { prompt: 'Ещё картинка' }, { raw: true });
+  assert.equal(overImageLimit.status, 402);
+});
+
+test('Eduardo: у Pro-пользователя лимиты выше', async () => {
+  const created = await signUp('eduardo-pro@example.com', 'eduardo_pro', 'Едуардо Про');
+  await created.call('POST', '/api/pro/subscribe');
+
+  const usage = await created.call('GET', '/api/eduardo/usage');
+  assert.equal(usage.pro, true);
+  assert.equal(usage.text.limit, 20);
+  assert.equal(usage.image.limit, 3);
+});
+
+test('Eduardo требует входа', async () => {
+  const res = await client()('POST', '/api/eduardo/text', { tool: 'qa', prompt: 'Вопрос' }, { raw: true });
+  assert.equal(res.status, 401);
 });
 
 test('выход закрывает сессию', async () => {

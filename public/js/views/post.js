@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { navigate } from '../router.js';
 import { autoGrow, avatar, confirmDialog, emptyState, h, spinner, timeEl, toast } from '../dom.js';
-import { icon } from '../icons.js';
+import { icon, proBadge } from '../icons.js';
 import { postCard } from '../components/post.js';
 import { requireAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
@@ -71,6 +71,7 @@ function commentNode(comment, { postId, onChanged }) {
         { class: 'post-meta' },
         h('a', { class: 'name', href: `/u/${comment.author.username}`, text: comment.author.displayName }),
         comment.author.role === 'admin' ? h('span', { class: 'admin-tag', text: 'админ' }) : null,
+        comment.author.isPro ? proBadge(14) : null,
         h('span', { class: 'handle', text: `@${comment.author.username}` }),
         h('span', { class: 'dot', text: '·' }),
         timeEl(comment.createdAt),

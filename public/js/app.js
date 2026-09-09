@@ -12,9 +12,10 @@ import { profileView } from './views/profile.js';
 import { settingsView } from './views/settings.js';
 import { notificationsView } from './views/notifications.js';
 import { messagesView } from './views/messages.js';
+import { eduardoView } from './views/eduardo.js';
 import { staticView } from './views/static.js';
 import { adminView } from './views/admin.js';
-import { openAuth } from './components/auth.js';
+import { openAuth, openCompleteProfile } from './components/auth.js';
 import { openComposer } from './components/composer.js';
 
 route('/', homeView);
@@ -24,6 +25,7 @@ route('/u/:username', profileView);
 route('/settings', settingsView);
 route('/notifications', notificationsView);
 route('/messages', messagesView);
+route('/eduardo', eduardoView);
 route('/admin', adminView);
 
 for (const page of ['about', 'rules', 'privacy', 'terms']) {
@@ -56,11 +58,27 @@ setNotFound(async () => {
 });
 
 async function boot() {
+  // Возврат со страницы OAuth-провайдера с ошибкой — показываем и убираем из адреса.
+  const url = new URL(location.href);
+  const oauthError = url.searchParams.get('oauthError');
+  if (oauthError) {
+    url.searchParams.delete('oauthError');
+    history.replaceState({}, '', url.pathname + url.search + url.hash);
+  }
+
   try {
     const [meta, me] = await Promise.all([api.meta(), api.me()]);
     state.meta = meta;
     setUser(me.user);
     if (me.user?.theme) applyTheme(me.user.theme, { persist: false });
+    // Список кнопок OAuth не критичен для загрузки приложения — если сервис
+    // недоступен, просто не показываем ни одну кнопку как настроенную.
+    api
+      .oauthProviders()
+      .then((data) => {
+        state.oauthProviders = data.providers;
+      })
+      .catch(() => {});
   } catch (error) {
     document.getElementById('app').replaceChildren(
       h(
@@ -77,10 +95,13 @@ async function boot() {
   initRouter();
   await render();
 
+  if (oauthError) toast(oauthError, 'error');
+
   // Если профиль не создан — сразу предлагаем завершить регистрацию.
+  // Сессия уже открыта (по коду или через OAuth), поэтому просим только никнейм.
   if (state.user && !state.user.username) {
     toast('Завершите создание профиля');
-    await openAuth(state.user.email);
+    await openCompleteProfile();
     await render();
   }
 

@@ -16,11 +16,14 @@ import {
 import { suggestedUsers, topCategories, topModels, trendingTags } from './store.js';
 import { HttpError, wrap } from './util.js';
 import { router as authRouter, cleanupExpired } from './routes/auth.js';
+import { router as oauthRouter } from './routes/oauth.js';
 import { commentsRouter, router as postsRouter } from './routes/posts.js';
 import { meRouter, router as usersRouter, searchRouter } from './routes/users.js';
 import { router as uploadsRouter } from './routes/uploads.js';
 import { router as notificationsRouter } from './routes/notifications.js';
 import { router as adminRouter } from './routes/admin.js';
+import { router as proRouter } from './routes/pro.js';
+import { router as eduardoRouter } from './routes/eduardo.js';
 
 export const app = express();
 
@@ -83,6 +86,15 @@ app.get('/api/meta', (req, res) => {
     limits: LIMITS,
     mailerMode,
     devCodesEnabled,
+    pro: { priceLabel: config.pro.priceLabel, durationDays: config.pro.durationDays },
+    eduardo: {
+      freeTextLimit: config.eduardo.freeTextLimit,
+      freeImageLimit: config.eduardo.freeImageLimit,
+      proTextLimit: config.eduardo.proTextLimit,
+      proImageLimit: config.eduardo.proImageLimit,
+      textSimulated: !config.ai.anthropicKey,
+      imageSimulated: !config.ai.openaiKey,
+    },
     user: req.user
       ? {
           id: req.user.id,
@@ -106,6 +118,7 @@ app.get(
   }),
 );
 
+app.use('/api/auth/oauth', oauthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/comments', commentsRouter);
@@ -115,6 +128,8 @@ app.use('/api/search', searchRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/pro', proRouter);
+app.use('/api/eduardo', eduardoRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Метод API не найден' });

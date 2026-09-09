@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
   role           TEXT NOT NULL DEFAULT 'user',     -- user | admin
   status         TEXT NOT NULL DEFAULT 'active',   -- active | warned | banned
   status_reason  TEXT,
+  is_pro         INTEGER NOT NULL DEFAULT 0,
+  pro_since      TEXT,
+  pro_expires_at TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -157,6 +160,47 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL,   -- github | google | microsoft | discord
+  provider_user_id  TEXT NOT NULL,
+  email             TEXT,
+  display_name      TEXT,
+  avatar_url        TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (provider, provider_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state       TEXT PRIMARY KEY,
+  provider    TEXT NOT NULL,
+  redirect_to TEXT,
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS eduardo_usage (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period     TEXT NOT NULL,   -- 'YYYY-MM', сбрасывается ежемесячно
+  text_used  INTEGER NOT NULL DEFAULT 0,
+  image_used INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, period)
+);
+
+CREATE TABLE IF NOT EXISTS eduardo_history (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tool       TEXT NOT NULL,   -- qa | test | code | image
+  prompt     TEXT NOT NULL,
+  result     TEXT NOT NULL DEFAULT '',
+  image_url  TEXT,
+  simulated  INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eduardo_history_user ON eduardo_history(user_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -186,6 +230,9 @@ function addColumnIfMissing(table, column, definition) {
 addColumnIfMissing('posts', 'title', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('posts', 'category', "TEXT NOT NULL DEFAULT 'other'");
 addColumnIfMissing('posts', 'poll_question', "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('users', 'is_pro', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'pro_since', 'TEXT');
+addColumnIfMissing('users', 'pro_expires_at', 'TEXT');
 
 // Индексы по новым колонкам — только после того, как колонки точно существуют.
 db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');

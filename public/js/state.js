@@ -7,6 +7,7 @@ const listeners = new Set();
 export const state = {
   user: null,          // текущий пользователь (privateUser) или null
   meta: null,          // справочники моделей, уровней, категорий, причин жалоб
+  oauthProviders: [],  // кнопки входа через сторонние сервисы
   theme: document.documentElement.dataset.theme || 'dark',
   unread: 0,           // непрочитанные уведомления
   unreadMessages: 0,   // непрочитанные внутренние сообщения

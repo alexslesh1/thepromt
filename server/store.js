@@ -1,4 +1,5 @@
 import { all, get, run } from './db.js';
+import { nowIso } from './util.js';
 
 /* ------------------------------------------------------------------ */
 /* Пользователи                                                        */
@@ -36,11 +37,21 @@ export function publicUser(row, viewerId = null) {
     role: row.role,
     status: row.status,
     statusReason: row.status_reason || null,
+    isPro: isProActive(row),
     createdAt: row.created_at,
     counts,
     isFollowing,
     isMe: viewerId === row.id,
   };
+}
+
+/** Pro активен, если флаг стоит и (нет срока действия ИЛИ срок ещё не прошёл). */
+export function isProActive(row) {
+  if (!row?.is_pro) return false;
+  // nowIso() даёт «YYYY-MM-DD HH:MM:SS» — тот же формат хранится в pro_expires_at,
+  // поэтому строковое сравнение работает как сравнение времени.
+  if (!row.pro_expires_at) return true;
+  return row.pro_expires_at > nowIso();
 }
 
 /** Расширенное представление — только для самого пользователя. */
@@ -50,6 +61,7 @@ export function privateUser(row) {
     ...publicUser(row, row.id),
     email: row.email,
     theme: row.theme,
+    proExpiresAt: row.pro_expires_at || null,
     needsProfile: !row.username,
     unreadNotifications: countUnreadNotifications(row.id),
     unreadMessages: countUnreadMessages(row.id),
@@ -62,6 +74,26 @@ export const userByEmail = (email) => get('SELECT * FROM users WHERE email = $em
 export const userByUsername = (username) =>
   get('SELECT * FROM users WHERE ulower(username) = ulower($username)', { username });
 
+/**
+ * Находит пользователя по email или создаёт нового. Общая логика для входа
+ * по OTP и по OAuth: первый пользователь (или адрес из ADMIN_EMAILS)
+ * получает роль admin.
+ */
+export function findOrCreateUserByEmail(email, { adminEmails = [] } = {}) {
+  let row = userByEmail(email);
+  if (!row) {
+    const isFirstUser = get('SELECT COUNT(*) AS n FROM users').n === 0;
+    const isListedAdmin = adminEmails.includes(email);
+    const role = isListedAdmin || (adminEmails.length === 0 && isFirstUser) ? 'admin' : 'user';
+    run('INSERT INTO users (email, role) VALUES ($email, $role)', { email, role });
+    row = userByEmail(email);
+  } else if (adminEmails.includes(email) && row.role !== 'admin') {
+    run("UPDATE users SET role = 'admin' WHERE id = $id", { id: row.id });
+    row = userByEmail(email);
+  }
+  return row;
+}
+
 /* ------------------------------------------------------------------ */
 /* Посты                                                               */
 /* ------------------------------------------------------------------ */
@@ -69,6 +101,7 @@ export const userByUsername = (username) =>
 const POST_SELECT = `
   SELECT p.*,
          u.username, u.display_name, u.avatar_url, u.role AS author_role, u.status AS author_status,
+         u.is_pro AS author_is_pro, u.pro_expires_at AS author_pro_expires_at,
          (SELECT COUNT(*) FROM likes    l WHERE l.post_id = p.id)                          AS like_count,
          (SELECT COUNT(*) FROM reposts  r WHERE r.post_id = p.id)                          AS repost_count,
          (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
@@ -114,6 +147,7 @@ function shapePost(row, tags = [], poll = null) {
       avatarUrl: row.avatar_url || null,
       role: row.author_role,
       status: row.author_status,
+      isPro: isProActive({ is_pro: row.author_is_pro, pro_expires_at: row.author_pro_expires_at }),
     },
     counts: {
       likes: row.like_count,
@@ -377,7 +411,7 @@ export function buildFeedItems(rows, viewerId) {
 
 export function commentTree(postId, viewerId = 0) {
   const rows = all(
-    `SELECT c.*, u.username, u.display_name, u.avatar_url, u.role
+    `SELECT c.*, u.username, u.display_name, u.avatar_url, u.role, u.is_pro, u.pro_expires_at
      FROM comments c JOIN users u ON u.id = c.author_id
      WHERE c.post_id = $postId
      ORDER BY c.created_at ASC, c.id ASC`,
@@ -397,6 +431,7 @@ export function commentTree(postId, viewerId = 0) {
       displayName: row.display_name || row.username,
       avatarUrl: row.avatar_url || null,
       role: row.role,
+      isPro: isProActive(row),
     },
     replies: [],
   });

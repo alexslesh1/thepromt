@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { isAdmin } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, emptyState, frag, h, modal, plural, pluralWord, promptDialog, spinner, toast } from '../dom.js';
-import { icon } from '../icons.js';
+import { icon, proBadge } from '../icons.js';
 import { feedList } from '../components/post.js';
 import { requireAuth } from '../components/auth.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
@@ -210,6 +210,7 @@ export async function profileView({ params, query }) {
             current.role === 'admin'
               ? icon('verified', { size: 19, filled: true, class: 'verified' })
               : null,
+            current.isPro ? proBadge(19) : null,
           ),
           h('div', { class: 'profile-handle', text: `@${current.username}` }),
         ),

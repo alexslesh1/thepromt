@@ -6,10 +6,15 @@ import { navigate } from '../router.js';
 import { avatar, charCounter, confirmDialog, h, toast } from '../dom.js';
 import { icon } from '../icons.js';
 import { openAuth } from '../components/auth.js';
+import { openImageCropper } from '../components/imageCropper.js';
+import { openProModal } from '../components/pro.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
-/** Загрузка картинки с превью. */
-function imagePicker({ label, value, hint, onChange, preview }) {
+/**
+ * Загрузка картинки с превью. Перед отправкой на сервер файл проходит через
+ * редактор обрезки (`shape`: 'circle' для аватара, 'banner' для шапки).
+ */
+function imagePicker({ label, value, hint, onChange, preview, shape }) {
   const input = h('input', {
     type: 'file',
     accept: 'image/png,image/jpeg,image/webp,image/gif',
@@ -18,10 +23,17 @@ function imagePicker({ label, value, hint, onChange, preview }) {
       const file = event.target.files?.[0];
       event.target.value = '';
       if (!file) return;
+
+      const cropped = await openImageCropper(file, shape).catch((error) => {
+        toast(error.message, 'error');
+        return null;
+      });
+      if (!cropped) return;
+
       try {
-        const uploaded = await api.upload(file);
+        const uploaded = await api.upload(cropped);
         onChange(uploaded.url);
-        toast('Изображение загружено');
+        toast('Изображение сохранено');
       } catch (error) {
         toast(error.message, 'error');
       }
@@ -137,7 +149,8 @@ export async function settingsView() {
         label: 'Аватар',
         value: draft.avatarUrl,
         preview: avatarPreview,
-        hint: 'PNG, JPEG, WebP или GIF, до 5 МБ',
+        hint: 'Круглая обрезка. PNG, JPEG, WebP или GIF, до 5 МБ',
+        shape: 'circle',
         onChange: (url) => {
           draft.avatarUrl = url;
           renderForm();
@@ -147,7 +160,8 @@ export async function settingsView() {
         label: 'Фоновое изображение профиля',
         value: draft.bannerUrl,
         preview: bannerPreview,
-        hint: 'Широкая картинка — она растянется на всю шапку профиля',
+        hint: 'Широкая обрезка — растянется на всю шапку профиля',
+        shape: 'banner',
         onChange: (url) => {
           draft.bannerUrl = url;
           renderForm();
@@ -167,9 +181,28 @@ export async function settingsView() {
       save,
     );
 
-    const themeRow = h(
+    const proRow = h(
       'div',
       { class: 'card', style: { marginTop: '24px' } },
+      h(
+        'div',
+        { class: 'theme-switch' },
+        h('span', {
+          class: 'grow',
+          text: state.user.isPro ? 'Подписка Pro активна' : 'Подписки Pro нет',
+        }),
+        h(
+          'button',
+          { class: 'btn ghost small', type: 'button', onClick: () => openProModal().then(() => settingsView()) },
+          icon('crown', { size: 15 }),
+          h('span', { text: state.user.isPro ? 'Управление' : 'Оформить' }),
+        ),
+      ),
+    );
+
+    const themeRow = h(
+      'div',
+      { class: 'card', style: { marginTop: '18px' } },
       h('h3', { text: 'Оформление' }),
       h(
         'div',
@@ -255,7 +288,7 @@ export async function settingsView() {
           }),
     );
 
-    container.replaceChildren(form, themeRow, accountRow);
+    container.replaceChildren(form, proRow, themeRow, accountRow);
   };
 
   renderForm();

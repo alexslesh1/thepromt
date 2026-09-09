@@ -14,6 +14,8 @@ export const badRequest = (message, code) => new HttpError(400, message, code);
 export const unauthorized = (message = 'Требуется вход') => new HttpError(401, message);
 export const forbidden = (message = 'Недостаточно прав') => new HttpError(403, message);
 export const notFound = (message = 'Не найдено') => new HttpError(404, message);
+/** Лимит исчерпан — фича есть, но её нужно либо подождать, либо разблокировать подпиской. */
+export const limitReached = (message, code = 'limit_reached') => new HttpError(402, message, code);
 
 /** Оборачивает async-обработчик, чтобы отказы уходили в next(). */
 export const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
