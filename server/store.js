@@ -63,6 +63,7 @@ export function privateUser(row) {
     theme: row.theme,
     locale: row.locale || 'ru',
     hasPassword: !!row.password_hash,
+    usernameChangedAt: row.username_changed_at || null,
     proExpiresAt: row.pro_expires_at || null,
     needsProfile: !row.username,
     unreadNotifications: countUnreadNotifications(row.id),

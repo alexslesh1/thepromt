@@ -21,12 +21,12 @@ import { t } from '../i18n.js';
 import { postCard } from '../components/post.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
-const STATUS_TABS = [
-  { id: 'open', label: 'Новые' },
-  { id: 'resolved', label: 'Обработанные' },
-  { id: 'dismissed', label: 'Отклонённые' },
-  { id: 'users', label: 'Пользователи' },
-  { id: 'models', label: 'Модели' },
+const STATUS_TABS = () => [
+  { id: 'open', label: t('admin.tab.open') },
+  { id: 'resolved', label: t('admin.tab.resolved') },
+  { id: 'dismissed', label: t('admin.tab.dismissed') },
+  { id: 'users', label: t('admin.tab.users') },
+  { id: 'models', label: t('admin.tab.models') },
 ];
 
 /** Карточка жалобы со всеми действиями модератора. */
@@ -352,14 +352,15 @@ export async function adminView({ query }) {
     return;
   }
 
-  const tab = STATUS_TABS.some((t) => t.id === query.get('tab')) ? query.get('tab') : 'open';
+  const statusTabs = STATUS_TABS();
+  const tab = statusTabs.some((tabItem) => tabItem.id === query.get('tab')) ? query.get('tab') : 'open';
 
   main.append(
     header({
       title: t('header.admin.title'),
       subtitle: 'Жалобы и модерация сообщества',
       tabs: {
-        items: STATUS_TABS,
+        items: statusTabs,
         active: tab,
         onSelect: (id) => navigate(`/admin${id === 'open' ? '' : `?tab=${id}`}`),
       },

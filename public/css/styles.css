@@ -270,6 +270,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: background .16s ease, color .16s ease;
 }
 .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+.mobile-locale-btn span { font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 
 /* ------------------------------- Формы --------------------------------- */
 
@@ -360,7 +361,10 @@ button, input, textarea, select { font: inherit; color: inherit; }
   display: grid; place-items: center; color: #fff;
 }
 .model-tile.big { width: 38px; height: 38px; border-radius: 11px; }
-.model-tile-plate { display: grid; place-items: center; flex: none; background: #f4f4f6; }
+/* Тёмная подложка (не белая!) — лого нейросетей берутся из "dark"-набора
+   lobehub, т.е. сами светлые/белые и предназначены для тёмного фона; на
+   светлой подложке они сливаются с ней и пропадают (так было с ChatGPT). */
+.model-tile-plate { display: grid; place-items: center; flex: none; background: #1c1d21; }
 
 .level-pill {
   display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 999px;
@@ -402,7 +406,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 999px;
-  font-size: 12.5px; font-weight: 500; color: var(--text-muted);
+  font-size: 12.5px; font-weight: 500; color: var(--text-muted); max-width: 100%; overflow-wrap: anywhere;
   background: var(--bg-secondary); border: 1px solid var(--border); cursor: pointer;
   transition: color .16s ease, border-color .16s ease;
 }
@@ -565,14 +569,18 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .theme-card .grow { flex: 1; min-width: 0; }
 .theme-card .t { display: block; font-weight: 650; font-size: 14px; }
 .theme-card .s { display: block; font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-.theme-toggle { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 11px; }
-.theme-toggle button {
+/* .locale-toggle — отдельный от .theme-toggle класс (не переиспользуем!):
+   иначe `.theme-toggle button` совпадает сразу с обеими группами кнопок. */
+.theme-toggle, .locale-toggle { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 11px; }
+.theme-toggle button, .locale-toggle button {
   width: 32px; height: 30px; border-radius: 8px; border: 0; cursor: pointer;
   background: none; color: var(--text-muted); display: grid; place-items: center;
   transition: background .16s ease, color .16s ease;
 }
-.theme-toggle button:hover { color: var(--text); }
-.theme-toggle button.on { background: var(--gradient); color: #fff; }
+.theme-toggle button:hover, .locale-toggle button:hover { color: var(--text); }
+.theme-toggle button.on, .locale-toggle button.on { background: var(--gradient); color: #fff; }
+.locale-card { margin-top: 14px; }
+.locale-toggle button { width: auto; padding: 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 
 .pro-badge { color: var(--save); flex: none; }
 .admin-badge { color: var(--accent); flex: none; }
@@ -621,12 +629,17 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .eduardo-row.user { align-items: flex-end; }
 .eduardo-row.assistant { align-items: stretch; }
 
+/* Пузырь пользователя всегда тёмно-серый с белым текстом — независимо от
+   темы сайта (как в референсе). Важно: без явного цвета здесь текст внутри
+   наследовал бы .eduardo-msg-text ниже — у него РАВНАЯ специфичность в
+   светлой теме, и по порядку объявления в файле побеждал бы тёмный цвет
+   на тёмном пузыре (сообщение становилось нечитаемым). Поэтому цвет задан
+   прямо на дочернем элементе — правило на элемент бьёт унаследованное.  */
 .eduardo-user-bubble {
   max-width: 78%; padding: 10px 14px; border-radius: 16px 16px 4px 16px;
-  background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text);
+  background: #2b2f36; border: 1px solid #2b2f36;
 }
-[data-theme='light'] .eduardo-user-bubble { background: #2b2f36; color: #fff; border-color: #2b2f36; }
-.eduardo-user-bubble .eduardo-msg-text { white-space: pre-wrap; font-size: 14.5px; word-break: break-word; margin: 0; }
+.eduardo-user-bubble p.eduardo-msg-text { color: #fff; white-space: pre-wrap; font-size: 14.5px; word-break: break-word; margin: 0; }
 
 .eduardo-msg { max-width: 92%; }
 .eduardo-msg-text {
@@ -824,7 +837,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .modal {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px;
   box-shadow: var(--shadow-float); width: min(560px, 100%); max-height: calc(100vh - 36px);
-  overflow-y: auto; padding: 24px;
+  overflow-x: hidden; overflow-y: auto; padding: 24px;
 }
 .modal.wide { width: min(720px, 100%); }
 .modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }

@@ -385,6 +385,24 @@ test('настройки профиля: имя, био, тема, аватар'
   assert.equal(bad.status, 400);
 });
 
+test('смена никнейма: кулдаун между сменами', async () => {
+  const first = await alice.call('PATCH', '/api/me', { username: 'alice_renamed' });
+  assert.equal(first.user.username, 'alice_renamed');
+  assert.ok(first.user.usernameChangedAt, 'после смены должна проставиться дата смены');
+
+  const tooSoon = await alice.call('PATCH', '/api/me', { username: 'alice_again' }, { raw: true });
+  assert.equal(tooSoon.status, 400);
+  assert.equal(tooSoon.data.code, 'username_cooldown');
+
+  // Отматываем дату последней смены за пределы кулдауна и пробуем снова.
+  dbRun('UPDATE users SET username_changed_at = $t WHERE username = $u', {
+    t: '2000-01-01 00:00:00',
+    u: 'alice_renamed',
+  });
+  const allowed = await alice.call('PATCH', '/api/me', { username: 'alice' });
+  assert.equal(allowed.user.username, 'alice');
+});
+
 test('уведомления приходят автору поста', async () => {
   const list = await alice.call('GET', '/api/notifications');
   const types = list.items.map((n) => n.type);

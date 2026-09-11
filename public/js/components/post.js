@@ -17,19 +17,22 @@ import {
   toast,
 } from '../dom.js';
 import { icon, modelTile, proBadge } from '../icons.js';
-import { t } from '../i18n.js';
+import { t, translateCategory, translateDifficulty, translateModel } from '../i18n.js';
 import { requireAuth } from './auth.js';
 import { openComposer } from './composer.js';
 import { sendPromptToEduardo } from '../views/eduardo.js';
 
 export const modelInfo = (id) =>
-  state.meta?.models.find((m) => m.id === id) ?? { id, label: id, short: id, color: '#8a8a8a', glyph: 'circle' };
+  translateModel(
+    state.meta?.models.find((m) => m.id === id) ?? { id, label: id, short: id, color: '#8a8a8a', glyph: 'circle' },
+  );
 
 export const modelLabel = (id) => modelInfo(id).label;
 
-export const difficultyLabel = (id) => state.meta?.difficulties.find((d) => d.id === id)?.label ?? id;
+export const difficultyLabel = (id) =>
+  translateDifficulty(id, state.meta?.difficulties.find((d) => d.id === id)?.label ?? id);
 
-export const categoryLabel = (id) => state.meta?.categories.find((c) => c.id === id)?.label ?? id;
+export const categoryLabel = (id) => translateCategory(id, state.meta?.categories.find((c) => c.id === id)?.label ?? id);
 
 const stop = (event) => event.stopPropagation();
 

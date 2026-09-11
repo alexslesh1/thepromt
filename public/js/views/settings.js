@@ -1,7 +1,7 @@
 /** Настройки профиля: аватар, баннер, данные аккаунта, тема, выход. */
 
 import { api } from '../api.js';
-import { applyTheme, setUser, state } from '../state.js';
+import { applyTheme, setUser, state, toggleLocale } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, charCounter, confirmDialog, h, toast } from '../dom.js';
 import { icon } from '../icons.js';
@@ -97,7 +97,25 @@ export async function settingsView() {
 
   const renderForm = () => {
     const displayName = h('input', { class: 'input', value: draft.displayName ?? '', maxlength: 50 });
-    const username = h('input', { class: 'input', value: draft.username ?? '', maxlength: 20 });
+
+    const cooldownDays = state.meta?.limits?.usernameChangeCooldownDays ?? 14;
+    let usernameLocked = false;
+    let usernameHint = 'Ссылка на профиль изменится вместе с никнеймом';
+    if (state.user.usernameChangedAt) {
+      const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+      const remainingMs = new Date(`${state.user.usernameChangedAt}Z`).getTime() + cooldownMs - Date.now();
+      if (remainingMs > 0) {
+        usernameLocked = true;
+        const daysLeft = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+        usernameHint = `Никнейм можно менять раз в ${cooldownDays} дней. Следующая смена — через ${daysLeft} дн.`;
+      }
+    }
+    const username = h('input', {
+      class: 'input',
+      value: draft.username ?? '',
+      maxlength: 20,
+      disabled: usernameLocked,
+    });
     const bio = h('textarea', { class: 'textarea', rows: 3, maxlength: 280, value: draft.bio ?? '' });
     const error = h('p', { class: 'error-text', style: { display: 'none' } });
 
@@ -174,7 +192,7 @@ export async function settingsView() {
         { class: 'field' },
         h('span', { class: 'label', text: 'Никнейм' }),
         username,
-        h('div', { class: 'hint', text: 'Ссылка на профиль изменится вместе с никнеймом' }),
+        h('div', { class: 'hint', text: usernameHint }),
       ),
       h('label', { class: 'field' }, h('span', { class: 'label', text: 'О себе' }), bio),
       charCounter(bio, 280),
@@ -238,27 +256,16 @@ export async function settingsView() {
         { class: 'theme-switch' },
         h('span', {
           class: 'grow',
-          text: state.user.locale === 'en' ? 'English' : 'Русский',
+          text: state.locale === 'en' ? 'English' : 'Русский',
         }),
         h(
           'button',
           {
             class: 'btn ghost small',
             type: 'button',
-            onClick: async () => {
-              const next = state.user.locale === 'en' ? 'ru' : 'en';
-              try {
-                await api.updateMe({ locale: next });
-                // Полная перезагрузка — самый надёжный способ применить новый
-                // язык сразу везде: и в каркасе приложения, и в открытом
-                // экране, без отдельного реактивного i18n для каждого узла.
-                location.reload();
-              } catch (error) {
-                toast(error.message, 'error');
-              }
-            },
+            onClick: () => toggleLocale(),
           },
-          h('span', { text: state.user.locale === 'en' ? 'Русский' : 'English' }),
+          h('span', { text: state.locale === 'en' ? 'Русский' : 'English' }),
         ),
       ),
     );

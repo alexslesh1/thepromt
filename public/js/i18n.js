@@ -84,6 +84,28 @@ const DICT = {
     'notifications.markAllRead': 'Отметить всё прочитанным',
     'dm.send.placeholder': 'Написать сообщение…',
     'dm.pill': 'Диалоги',
+    'home.tab.latest': 'Свежее',
+    'home.tab.popular': 'Популярное',
+    'home.tab.following': 'Подписки',
+    'home.filter.model': 'Все модели',
+    'home.filter.difficulty': 'Любой уровень',
+    'home.filter.category': 'Все категории',
+    'home.filter.sort': 'Сортировка',
+    'home.filter.reset': 'Сбросить',
+    'home.composer.placeholder': 'Какой промпт покажете сегодня?',
+    'home.empty.followingTitle': 'Здесь появятся промпты ваших подписок',
+    'home.empty.followingText': 'Подпишитесь на авторов — их публикации соберутся в этой ленте.',
+    'home.empty.defaultTitle': 'Пока нет промптов',
+    'home.empty.defaultText': 'Опубликуйте первый промпт или измените фильтры.',
+    'home.empty.needAuthTitle': 'Лента подписок доступна после входа',
+    'home.empty.needAuthText': 'Войдите, чтобы видеть промпты авторов, на которых вы подписаны.',
+    'explore.searchPlaceholder': 'Промпты, теги, модели, авторы…',
+    'admin.tab.open': 'Новые',
+    'admin.tab.resolved': 'Обработанные',
+    'admin.tab.dismissed': 'Отклонённые',
+    'admin.tab.users': 'Пользователи',
+    'admin.tab.models': 'Модели',
+    'composer.chooseModel': 'Выберите модель ИИ',
   },
   en: {
     'nav.home': 'Home',
@@ -161,11 +183,33 @@ const DICT = {
     'notifications.markAllRead': 'Mark all as read',
     'dm.send.placeholder': 'Write a message…',
     'dm.pill': 'Conversations',
+    'home.tab.latest': 'Latest',
+    'home.tab.popular': 'Popular',
+    'home.tab.following': 'Following',
+    'home.filter.model': 'All models',
+    'home.filter.difficulty': 'Any level',
+    'home.filter.category': 'All categories',
+    'home.filter.sort': 'Sort',
+    'home.filter.reset': 'Reset',
+    'home.composer.placeholder': 'What prompt will you share today?',
+    'home.empty.followingTitle': 'Prompts from people you follow will show up here',
+    'home.empty.followingText': 'Follow some creators — their posts will collect in this feed.',
+    'home.empty.defaultTitle': 'No prompts yet',
+    'home.empty.defaultText': 'Publish the first prompt or change the filters.',
+    'home.empty.needAuthTitle': 'Sign in to see the following feed',
+    'home.empty.needAuthText': 'Log in to see prompts from creators you follow.',
+    'explore.searchPlaceholder': 'Prompts, tags, models, creators…',
+    'admin.tab.open': 'New',
+    'admin.tab.resolved': 'Resolved',
+    'admin.tab.dismissed': 'Dismissed',
+    'admin.tab.users': 'Users',
+    'admin.tab.models': 'Models',
+    'composer.chooseModel': 'Choose an AI model',
   },
 };
 
 export function currentLocale() {
-  return state.user?.locale === 'en' ? 'en' : 'ru';
+  return state.locale === 'en' ? 'en' : 'ru';
 }
 
 /** Переводит ключ на текущий язык интерфейса; без ключа — возвращает сам ключ (заметно при опечатке). */
@@ -173,3 +217,52 @@ export function t(key) {
   const locale = currentLocale();
   return DICT[locale]?.[key] ?? DICT.ru[key] ?? key;
 }
+
+/**
+ * Справочники (модели, уровни, категории, сортировка, причины жалоб)
+ * приходят с сервера только на русском — это единственный источник данных
+ * (id, цвета иконок и т.д.). Ниже — англоязычные подписи по тем же id,
+ * которые подменяют русские, когда выбран английский интерфейс.
+ */
+const MODEL_LABELS_EN = {
+  chatgpt: { label: 'ChatGPT (OpenAI)', short: 'ChatGPT', hint: 'Text, ideas, analysis' },
+  claude: { label: 'Claude (Anthropic)', short: 'Claude', hint: 'Analysis & reasoning' },
+  gemini: { label: 'Gemini (Google)', short: 'Gemini', hint: 'Multimodal tasks' },
+  midjourney: { label: 'Midjourney', short: 'Midjourney', hint: 'Image generation' },
+  dalle: { label: 'DALL·E', short: 'DALL·E', hint: 'Images from text' },
+  'stable-diffusion': { label: 'Stable Diffusion', short: 'Stable Diffusion', hint: 'Open generation' },
+  flux: { label: 'FLUX', short: 'FLUX', hint: 'Photorealism & detail' },
+  sora: { label: 'Sora / video', short: 'Sora', hint: 'Video generation' },
+  suno: { label: 'Suno / audio', short: 'Suno', hint: 'Music & voice' },
+  llama: { label: 'Llama (Meta)', short: 'Llama', hint: 'Open models' },
+  deepseek: { label: 'DeepSeek', short: 'DeepSeek', hint: 'Code & reasoning' },
+  other: { label: 'Other model', short: 'Other', hint: 'Everything else' },
+};
+
+const DIFFICULTY_LABELS_EN = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
+
+const CATEGORY_LABELS_EN = {
+  images: 'Images', text: 'Text', code: 'Code & dev', marketing: 'Marketing', video: 'Video',
+  audio: 'Music & audio', business: 'Business & analytics', education: 'Education', other: 'Other',
+};
+
+const SORT_LABELS_EN = { new: 'Newest first', popular: 'Most popular first', discussed: 'Most discussed first' };
+
+const REPORT_REASON_LABELS_EN = {
+  spam: 'Spam or advertising', harmful: 'Harmful content', abuse: 'Abuse & harassment',
+  nsfw: '18+ content', illegal: 'Illegal content', copyright: 'Copyright infringement', other: 'Other',
+};
+
+/** Подменяет label/short/hint модели на английские при en-локали, иначе возвращает как есть. */
+export function translateModel(model) {
+  if (!model || currentLocale() !== 'en') return model;
+  const en = MODEL_LABELS_EN[model.id];
+  return en ? { ...model, ...en } : model;
+}
+
+const pick = (dict, id, fallback) => (currentLocale() === 'en' ? (dict[id] ?? fallback) : fallback);
+
+export const translateDifficulty = (id, fallback) => pick(DIFFICULTY_LABELS_EN, id, fallback);
+export const translateCategory = (id, fallback) => pick(CATEGORY_LABELS_EN, id, fallback);
+export const translateSort = (id, fallback) => pick(SORT_LABELS_EN, id, fallback);
+export const translateReportReason = (id, fallback) => pick(REPORT_REASON_LABELS_EN, id, fallback);

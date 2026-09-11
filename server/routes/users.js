@@ -169,7 +169,22 @@ meRouter.patch(
       const username = normalizeUsername(body.username);
       if (username !== req.user.username) {
         if (userByUsername(username)) throw badRequest('Никнейм уже занят', 'username_taken');
+
+        const lastChanged = req.user.username_changed_at;
+        if (lastChanged) {
+          const cooldownMs = LIMITS.usernameChangeCooldownDays * 24 * 60 * 60 * 1000;
+          const elapsedMs = Date.now() - new Date(`${lastChanged}Z`).getTime();
+          if (elapsedMs < cooldownMs) {
+            const daysLeft = Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+            throw badRequest(
+              `Никнейм можно менять раз в ${LIMITS.usernameChangeCooldownDays} дней. Попробуйте через ${daysLeft} дн.`,
+              'username_cooldown',
+            );
+          }
+        }
+
         updates.username = username;
+        updates.username_changed_at = nowIso();
       }
     }
 

@@ -17,7 +17,7 @@ export async function exploreView({ query }) {
 
   const input = h('input', {
     type: 'search',
-    placeholder: 'Промпты, теги, модели, авторы…',
+    placeholder: t('explore.searchPlaceholder'),
     value: initial,
     'aria-label': 'Поиск',
     onKeydown: (event) => {

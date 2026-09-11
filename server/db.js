@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   pro_expires_at TEXT,
   password_hash  TEXT,                              -- необязательный доп. способ входа
   locale         TEXT NOT NULL DEFAULT 'ru',         -- ru | en, язык интерфейса
+  username_changed_at TEXT,                          -- когда никнейм меняли в последний раз (не при регистрации)
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -273,6 +274,7 @@ addColumnIfMissing('users', 'pro_since', 'TEXT');
 addColumnIfMissing('users', 'pro_expires_at', 'TEXT');
 addColumnIfMissing('users', 'password_hash', 'TEXT');
 addColumnIfMissing('users', 'locale', "TEXT NOT NULL DEFAULT 'ru'");
+addColumnIfMissing('users', 'username_changed_at', 'TEXT');
 
 // Индексы по новым колонкам — только после того, как колонки точно существуют.
 db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');

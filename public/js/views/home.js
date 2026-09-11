@@ -5,26 +5,26 @@ import { state } from '../state.js';
 import { navigate } from '../router.js';
 import { emptyState, h } from '../dom.js';
 import { icon } from '../icons.js';
-import { t } from '../i18n.js';
+import { t, translateCategory, translateDifficulty, translateModel, translateSort } from '../i18n.js';
 import { feedList } from '../components/post.js';
 import { inlineComposer, selectWrap } from '../components/composer.js';
 import { header, mountMobileTop, shell } from '../components/shell.js';
 
-const TABS = [
-  { id: 'latest', label: 'Свежее' },
-  { id: 'popular', label: 'Популярное' },
-  { id: 'following', label: 'Подписки' },
+const TABS = () => [
+  { id: 'latest', label: t('home.tab.latest') },
+  { id: 'popular', label: t('home.tab.popular') },
+  { id: 'following', label: t('home.tab.following') },
 ];
 
 /** Селекторы «Все модели / Любой уровень / Все категории / Сначала свежее». */
 function filterBar(query, setParam, { showSort = true } = {}) {
-  const build = (name, allLabel, items, key) => {
+  const build = (name, allLabel, items, key, translateItem) => {
     const select = h(
       'select',
       { class: 'select', 'aria-label': name, onChange: (event) => setParam(key, event.target.value) },
       allLabel ? h('option', { value: '', text: allLabel }) : null,
       items.map((item) =>
-        h('option', { value: item.id, text: item.label, selected: (query.get(key) ?? '') === item.id }),
+        h('option', { value: item.id, text: translateItem(item.id, item.label), selected: (query.get(key) ?? '') === item.id }),
       ),
     );
     return selectWrap(select);
@@ -33,19 +33,19 @@ function filterBar(query, setParam, { showSort = true } = {}) {
   const bar = h(
     'div',
     { class: 'filter-bar' },
-    build('Модель', 'Все модели', state.meta?.models ?? [], 'model'),
-    build('Уровень', 'Любой уровень', state.meta?.difficulties ?? [], 'difficulty'),
-    build('Категория', 'Все категории', state.meta?.categories ?? [], 'category'),
+    build('Модель', t('home.filter.model'), state.meta?.models ?? [], 'model', (id, fallback) => translateModel({ id, label: fallback }).label),
+    build('Уровень', t('home.filter.difficulty'), state.meta?.difficulties ?? [], 'difficulty', translateDifficulty),
+    build('Категория', t('home.filter.category'), state.meta?.categories ?? [], 'category', translateCategory),
   );
 
   if (showSort) {
     const sort = h(
       'select',
-      { class: 'select', 'aria-label': 'Сортировка', onChange: (event) => setParam('sort', event.target.value) },
+      { class: 'select', 'aria-label': t('home.filter.sort'), onChange: (event) => setParam('sort', event.target.value) },
       (state.meta?.sortOptions ?? []).map((option) =>
         h('option', {
           value: option.id,
-          text: option.label,
+          text: translateSort(option.id, option.label),
           selected: (query.get('sort') ?? 'new') === option.id,
         }),
       ),
@@ -73,7 +73,7 @@ function activeFilters(query) {
     'div',
     { class: 'active-filters' },
     ...chips,
-    h('button', { class: 'chip', onClick: () => navigate('/') }, icon('close', { size: 13 }), h('span', { text: 'Сбросить' })),
+    h('button', { class: 'chip', onClick: () => navigate('/') }, icon('close', { size: 13 }), h('span', { text: t('home.filter.reset') })),
   );
 }
 
@@ -82,8 +82,9 @@ export async function homeView({ query }) {
   main.replaceChildren();
   mountMobileTop(main);
 
+  const tabs = TABS();
   const requestedTab = query.get('tab') ?? 'latest';
-  const tab = TABS.some((t) => t.id === requestedTab) ? requestedTab : 'latest';
+  const tab = tabs.some((tabItem) => tabItem.id === requestedTab) ? requestedTab : 'latest';
 
   const setParam = (key, value) => {
     const next = new URLSearchParams(location.search);
@@ -99,7 +100,7 @@ export async function homeView({ query }) {
       subtitle: t('header.home.subtitle'),
       pill: { icon: 'users', label: t('header.home.pill') },
       tabs: {
-        items: TABS,
+        items: tabs,
         active: tab,
         onSelect: (id) => setParam('tab', id === 'latest' ? '' : id),
       },
@@ -107,9 +108,7 @@ export async function homeView({ query }) {
   );
 
   if (tab === 'following' && !state.user) {
-    main.append(
-      emptyState('users', 'Лента подписок доступна после входа', 'Войдите, чтобы видеть промпты авторов, на которых вы подписаны.'),
-    );
+    main.append(emptyState('users', t('home.empty.needAuthTitle'), t('home.empty.needAuthText')));
     return;
   }
 
@@ -126,11 +125,8 @@ export async function homeView({ query }) {
         page,
       }),
     emptyIcon: tab === 'following' ? 'users' : 'sparkles',
-    emptyTitle: tab === 'following' ? 'Здесь появятся промпты ваших подписок' : 'Пока нет промптов',
-    emptyText:
-      tab === 'following'
-        ? 'Подпишитесь на авторов — их публикации соберутся в этой ленте.'
-        : 'Опубликуйте первый промпт или измените фильтры.',
+    emptyTitle: tab === 'following' ? t('home.empty.followingTitle') : t('home.empty.defaultTitle'),
+    emptyText: tab === 'following' ? t('home.empty.followingText') : t('home.empty.defaultText'),
   });
 
   main.append(inlineComposer({ onCreated: () => list.reload() }));

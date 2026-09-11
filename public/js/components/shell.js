@@ -2,10 +2,10 @@
 
 import { api } from '../api.js';
 import { currentPath, navigate } from '../router.js';
-import { isAdmin, setUser, state, subscribe, applyTheme } from '../state.js';
+import { applyLocale, applyTheme, isAdmin, setUser, state, subscribe } from '../state.js';
 import { avatar, frag, h, modal, toast } from '../dom.js';
 import { adminBadge, icon, modelTile, proBadge } from '../icons.js';
-import { t } from '../i18n.js';
+import { t, translateModel } from '../i18n.js';
 import { openAuth } from './auth.js';
 import { openComposer } from './composer.js';
 import { openProModal } from './pro.js';
@@ -253,6 +253,20 @@ function themeCard() {
       icon(iconName, { size: 15 }),
     );
 
+  const en = state.locale === 'en';
+  const localeButton = (locale, label) =>
+    h(
+      'button',
+      {
+        class: locale === state.locale ? 'on' : '',
+        title: label,
+        'aria-label': label,
+        'aria-pressed': locale === state.locale ? 'true' : 'false',
+        onClick: () => applyLocale(locale),
+      },
+      h('span', { text: locale.toUpperCase() }),
+    );
+
   return h(
     'div',
     { class: 'card' },
@@ -267,6 +281,18 @@ function themeCard() {
         h('span', { class: 's', text: dark ? t('theme.darkHint') : t('theme.lightHint') }),
       ),
       h('span', { class: 'theme-toggle' }, button('light', 'sun', t('theme.light')), button('dark', 'moon', t('theme.dark'))),
+    ),
+    h(
+      'div',
+      { class: 'theme-card locale-card' },
+      h('span', { class: 'tile' }, icon('globe', { size: 18 })),
+      h(
+        'span',
+        { class: 'grow' },
+        h('span', { class: 't', text: en ? 'English' : 'Русский' }),
+        h('span', { class: 's', text: t('settings.section.language') }),
+      ),
+      h('span', { class: 'locale-toggle' }, localeButton('ru', 'Русский'), localeButton('en', 'English')),
     ),
   );
 }
@@ -288,7 +314,7 @@ function cardHead(title, moreLabel, onMore) {
   );
 }
 
-const modelInfo = (id) => state.meta?.models.find((m) => m.id === id) ?? { id, label: id, short: id };
+const modelInfo = (id) => translateModel(state.meta?.models.find((m) => m.id === id) ?? { id, label: id, short: id });
 
 async function rightColumn() {
   const column = h('aside', { class: 'col-right' });
@@ -460,6 +486,15 @@ function mobileTop() {
         onClick: () => applyTheme(state.theme === 'dark' ? 'light' : 'dark'),
       },
       icon(state.theme === 'dark' ? 'sun' : 'moon', { size: 19 }),
+    ),
+    h(
+      'button',
+      {
+        class: 'icon-btn mobile-locale-btn',
+        title: state.locale === 'en' ? 'Русский' : 'English',
+        onClick: () => applyLocale(state.locale === 'en' ? 'ru' : 'en'),
+      },
+      h('span', { text: state.locale.toUpperCase() }),
     ),
     state.user ? null : h('button', { class: 'btn small', text: t('nav.login'), onClick: () => openAuth() }),
   );

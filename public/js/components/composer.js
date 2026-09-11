@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { autoGrow, avatar, charCounter, frag, h, modal, toast } from '../dom.js';
 import { icon } from '../icons.js';
+import { t, translateCategory, translateDifficulty, translateModel } from '../i18n.js';
 import { requireAuth } from './auth.js';
 
 /** Обёртка для select с иконкой-стрелкой. */
@@ -41,8 +42,8 @@ export function composerForm({ post = null, draft = null, onDone, onCancel = nul
   const modelSelect = h(
     'select',
     { class: 'select' },
-    h('option', { value: '', text: 'Выберите модель ИИ' }),
-    (meta?.models ?? []).map((model) =>
+    h('option', { value: '', text: t('composer.chooseModel') }),
+    (meta?.models ?? []).map(translateModel).map((model) =>
       h('option', { value: model.id, text: model.label, selected: source.modelFamily === model.id }),
     ),
   );
@@ -67,7 +68,11 @@ export function composerForm({ post = null, draft = null, onDone, onCancel = nul
     'select',
     { class: 'select' },
     (meta?.difficulties ?? []).map((level) =>
-      h('option', { value: level.id, text: level.label, selected: (source.difficulty ?? 'beginner') === level.id }),
+      h('option', {
+        value: level.id,
+        text: translateDifficulty(level.id, level.label),
+        selected: (source.difficulty ?? 'beginner') === level.id,
+      }),
     ),
   );
 
@@ -77,7 +82,7 @@ export function composerForm({ post = null, draft = null, onDone, onCancel = nul
     (meta?.categories ?? []).map((category) =>
       h('option', {
         value: category.id,
-        text: category.label,
+        text: translateCategory(category.id, category.label),
         selected: (source.category ?? 'other') === category.id,
       }),
     ),
@@ -396,7 +401,7 @@ export function inlineComposer({ onCreated }) {
         'div',
         { class: 'row-top' },
         avatar(state.user, 'md', { link: false }),
-        h('button', { class: 'composer-lite grow', text: 'Какой промпт покажете сегодня?', onClick: open }),
+        h('button', { class: 'composer-lite grow', text: t('home.composer.placeholder'), onClick: open }),
       ),
       h(
         'div',
