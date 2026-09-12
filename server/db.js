@@ -227,7 +227,9 @@ CREATE TABLE IF NOT EXISTS eduardo_messages (
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_eduardo_messages_user ON eduardo_messages(user_id, id);
-CREATE INDEX IF NOT EXISTS idx_eduardo_messages_conversation ON eduardo_messages(conversation_id, id);
+-- Индекс по conversation_id — не здесь: на существующих базах эта колонка
+-- появляется только миграцией ниже (addColumnIfMissing), а этот блок SCHEMA
+-- выполняется раньше и упадёт на CREATE INDEX по ещё не существующей колонке.
 
 CREATE TABLE IF NOT EXISTS notifications (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -322,6 +324,7 @@ backfillEduardoConversations();
 
 // Индексы по новым колонкам — только после того, как колонки точно существуют.
 db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_eduardo_messages_conversation ON eduardo_messages(conversation_id, id)');
 
 /* --- Помощники запросов --- */
 
