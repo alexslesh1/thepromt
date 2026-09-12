@@ -104,9 +104,13 @@ export const api = {
   cancelPro: () => request('POST', '/api/pro/cancel'),
 
   eduardoUsage: () => request('GET', '/api/eduardo/usage'),
-  eduardoChat: () => request('GET', '/api/eduardo/chat'),
-  eduardoSend: (message) => request('POST', '/api/eduardo/chat', { message }),
-  eduardoClearChat: () => request('DELETE', '/api/eduardo/chat'),
+  eduardoConversations: () => request('GET', '/api/eduardo/conversations'),
+  eduardoCreateConversation: () => request('POST', '/api/eduardo/conversations'),
+  eduardoDeleteConversation: (id) => request('DELETE', `/api/eduardo/conversations/${id}`),
+  eduardoChat: (conversationId) => request('GET', `/api/eduardo/chat${query({ conversationId })}`),
+  eduardoSend: (message, conversationId) =>
+    request('POST', `/api/eduardo/chat${query({ conversationId })}`, { message }),
+  eduardoClearChat: (conversationId) => request('DELETE', `/api/eduardo/chat${query({ conversationId })}`),
   eduardoImage: (prompt) => request('POST', '/api/eduardo/image', { prompt }),
 
   adminStats: () => request('GET', '/api/admin/stats'),

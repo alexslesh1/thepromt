@@ -204,17 +204,30 @@ CREATE TABLE IF NOT EXISTS eduardo_history (
 );
 CREATE INDEX IF NOT EXISTS idx_eduardo_history_user ON eduardo_history(user_id, created_at DESC);
 
--- Непрерывный чат с Eduardo (один поток на пользователя, не пер-запросный
--- вопрос-ответ) — DeepSeek получает всю историю как контекст диалога.
-CREATE TABLE IF NOT EXISTS eduardo_messages (
+-- Отдельные диалоги с Eduardo (как «чаты» в ChatGPT) — пользователь может
+-- вести несколько параллельных переписок и переключаться между ними.
+CREATE TABLE IF NOT EXISTS eduardo_conversations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role       TEXT NOT NULL,   -- user | assistant
-  content    TEXT NOT NULL,
-  simulated  INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  title      TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eduardo_conversations_user ON eduardo_conversations(user_id, updated_at DESC);
+
+-- Сообщения внутри диалога — DeepSeek получает историю конкретного диалога
+-- как контекст (не всю переписку пользователя сразу).
+CREATE TABLE IF NOT EXISTS eduardo_messages (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id INTEGER REFERENCES eduardo_conversations(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL,   -- user | assistant
+  content         TEXT NOT NULL,
+  simulated       INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_eduardo_messages_user ON eduardo_messages(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_eduardo_messages_conversation ON eduardo_messages(conversation_id, id);
 
 CREATE TABLE IF NOT EXISTS notifications (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,6 +288,37 @@ addColumnIfMissing('users', 'pro_expires_at', 'TEXT');
 addColumnIfMissing('users', 'password_hash', 'TEXT');
 addColumnIfMissing('users', 'locale', "TEXT NOT NULL DEFAULT 'ru'");
 addColumnIfMissing('users', 'username_changed_at', 'TEXT');
+addColumnIfMissing('eduardo_messages', 'conversation_id', 'INTEGER REFERENCES eduardo_conversations(id) ON DELETE CASCADE');
+
+/**
+ * Догоняющая миграция данных (не только схемы): базы, созданные до появления
+ * диалогов, хранят все сообщения Eduardo одним плоским списком на
+ * пользователя (conversation_id ещё NULL). Группируем их в один диалог на
+ * пользователя, чтобы старая переписка не потерялась и появилась в списке
+ * чатов.
+ */
+function backfillEduardoConversations() {
+  const users = db
+    .prepare('SELECT DISTINCT user_id FROM eduardo_messages WHERE conversation_id IS NULL')
+    .all();
+  for (const { user_id: userId } of users) {
+    const first = db
+      .prepare('SELECT content, created_at FROM eduardo_messages WHERE user_id = ? AND conversation_id IS NULL ORDER BY id ASC LIMIT 1')
+      .get(userId);
+    const last = db
+      .prepare('SELECT created_at FROM eduardo_messages WHERE user_id = ? AND conversation_id IS NULL ORDER BY id DESC LIMIT 1')
+      .get(userId);
+    const title = (first?.content ?? '').trim().slice(0, 60) || 'Чат с Eduardo';
+    const inserted = db
+      .prepare('INSERT INTO eduardo_conversations (user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run(userId, title, first?.created_at ?? new Date().toISOString(), last?.created_at ?? new Date().toISOString());
+    db.prepare('UPDATE eduardo_messages SET conversation_id = ? WHERE user_id = ? AND conversation_id IS NULL').run(
+      inserted.lastInsertRowid,
+      userId,
+    );
+  }
+}
+backfillEduardoConversations();
 
 // Индексы по новым колонкам — только после того, как колонки точно существуют.
 db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');

@@ -324,22 +324,36 @@ await step('публикация промпта с опросом и голос�
   await shot('17-poll');
 });
 
-await step('раздел Eduardo: чат, модель, история, код и заглушки Search/файлов', async () => {
+await step('Eduardo: список чатов и создание нового чата', async () => {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.locator('.side-card.ai').click();
-  await page.waitForURL(/\/eduardo/);
+  await page.waitForURL(/\/eduardo$/);
+  await page.waitForSelector('.eduardo-new-chat-btn');
+  await shot('19-eduardo-list');
+
+  await page.locator('.eduardo-new-chat-btn').click();
+  await page.waitForURL(/\/eduardo\/\d+/);
   await page.waitForSelector('.eduardo-usage');
+});
+
+await step('раздел Eduardo: чат, модель, история, код и заглушки Search/файлов', async () => {
   const modelValue = await page.locator('.eduardo-toolbar select').inputValue();
   if (modelValue !== 'eduardo-s1') throw new Error(`неожиданная модель по умолчанию: ${modelValue}`);
-  await shot('19-eduardo');
+  await shot('19b-eduardo-chat');
 
   await page.locator('.eduardo-composer-input').fill('Что такое ThePrompt?');
   await page.locator('.eduardo-composer-form button[type=submit]').click();
   await page.waitForSelector('.eduardo-row.assistant .eduardo-sim-note', { timeout: 8000 });
   const rowCount = await page.locator('.eduardo-row').count();
   if (rowCount < 2) throw new Error('в чате должно быть хотя бы сообщение пользователя и ответ Eduardo');
-  const lastReply = await page.locator('.eduardo-row.assistant').last().locator('.eduardo-msg-text').first().innerText();
+  const assistantText = page.locator('.eduardo-row.assistant').last().locator('.eduardo-msg-text').first();
+  const lastReply = await assistantText.innerText();
   if (!lastReply.includes('Демо-ответ Eduardo')) throw new Error('ответ пуст или не помечен демо-режимом');
+  if (lastReply.includes('##') || lastReply.includes('**')) throw new Error('markdown не отрендерился — в тексте остались сырые # и *');
+  const assistantHtml = await assistantText.innerHTML();
+  if (!assistantHtml.includes('<h2') || !assistantHtml.includes('<strong>')) {
+    throw new Error('markdown ответа Eduardo должен рендериться в HTML (заголовок и жирный текст)');
+  }
   await shot('20-eduardo-chat');
 
   // Блок кода: карточка с языком, подсветкой и кнопками Copy/Download.
@@ -365,6 +379,25 @@ await step('раздел Eduardo: чат, модель, история, код �
   const attachToast = await page.locator('.toast').last().innerText();
   if (!attachToast.includes('скоро будет доступно')) throw new Error('кнопка вложений не предупреждает о «скоро будет доступно»');
   await shot('21-eduardo-composer');
+});
+
+await step('Eduardo: чат появляется в списке и его можно удалить', async () => {
+  await page.getByRole('button', { name: 'Все чаты' }).click();
+  await page.waitForURL(/\/eduardo$/);
+  await page.waitForSelector('.eduardo-chat-row');
+  const rowsBefore = await page.locator('.eduardo-chat-row').count();
+  if (rowsBefore < 1) throw new Error('созданный чат не появился в списке');
+  const firstTitle = await page.locator('.eduardo-chat-row .title').first().innerText();
+  if (!firstTitle.includes('Что такое ThePrompt')) throw new Error('заголовок чата в списке не совпадает с первым сообщением');
+  await shot('21b-eduardo-list');
+
+  await page.locator('.eduardo-chat-row').first().locator('.eduardo-chat-delete').click({ force: true });
+  await page.waitForSelector('.modal');
+  await page.locator('.modal button.danger').click();
+  await page.waitForSelector('.toast');
+  await page.waitForTimeout(400);
+  const rowsAfter = await page.locator('.eduardo-chat-row').count();
+  if (rowsAfter !== rowsBefore - 1) throw new Error('удалённый чат не пропал из списка');
 });
 
 await step('кнопка «Попробовать у Eduardo» переносит промпт поста в чат', async () => {

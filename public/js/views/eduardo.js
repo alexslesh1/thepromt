@@ -1,18 +1,20 @@
 /**
- * Eduardo — ИИ-помощник ThePrompt: непрерывный чат (не разовый вопрос-ответ),
- * с моделью Eduardo-S1. Оформление — по референсу интерфейса DeepSeek:
- * пузырь только у сообщения пользователя, ответ ассистента — обычный текст,
- * код — отдельная карточка с подсветкой, копированием и скачиванием.
- * Генерация изображений — отдельно, «скоро будет доступно». Лимиты — по
- * месяцам, у Pro больше.
+ * Eduardo — ИИ-помощник ThePrompt. Несколько параллельных чатов (как в
+ * ChatGPT): /eduardo — список диалогов, /eduardo/new — создаёт чат и сразу
+ * переходит в него, /eduardo/:id — сама переписка. Оформление переписки —
+ * по референсу интерфейса DeepSeek: пузырь только у сообщения пользователя,
+ * ответ ассистента — обычный текст (с markdown-разметкой), код — отдельная
+ * карточка с подсветкой, копированием и скачиванием. Генерация изображений —
+ * отдельно, «скоро будет доступно». Лимиты — по месяцам, у Pro больше.
  */
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { navigate } from '../router.js';
-import { autoGrow, confirmDialog, copyText, emptyState, h, spinner, timeEl, toast } from '../dom.js';
+import { autoGrow, confirmDialog, copyText, emptyState, h, parseDate, spinner, timeEl, toast } from '../dom.js';
 import { icon, proBadge } from '../icons.js';
 import { extensionFor, highlightCode } from '../highlight.js';
-import { t } from '../i18n.js';
+import { renderMarkdown } from '../markdown.js';
+import { currentLocale, t } from '../i18n.js';
 import { openAuth } from '../components/auth.js';
 import { openComposer } from '../components/composer.js';
 import { openProModal } from '../components/pro.js';
@@ -20,15 +22,168 @@ import { header, mountMobileTop, shell } from '../components/shell.js';
 
 const PENDING_KEY = 'eduardo-pending-prompt';
 
-/** Переносит текст промпта поста в чат с Eduardo и сразу его отправляет. */
+/** Переносит текст промпта поста в новый чат с Eduardo и сразу его отправляет. */
 export function sendPromptToEduardo(promptText) {
   try {
     sessionStorage.setItem(PENDING_KEY, promptText);
   } catch {
     /* приватный режим — просто откроем чат без автоподстановки */
   }
-  navigate('/eduardo');
+  navigate('/eduardo/new');
 }
+
+function loginGate(main) {
+  main.append(
+    header({ title: 'Eduardo', subtitle: 'ИИ-помощник ThePrompt' }),
+    h(
+      'div',
+      { class: 'empty' },
+      h('div', { class: 'big' }, icon('sparkles', { size: 26 })),
+      h('h3', { text: 'Нужен вход' }),
+      h('p', { text: 'Войдите, чтобы пообщаться с Eduardo.' }),
+      h('button', {
+        class: 'btn',
+        style: { marginTop: '14px' },
+        text: 'Войти',
+        onClick: async () => {
+          if (await openAuth()) navigate('/eduardo');
+        },
+      }),
+    ),
+  );
+}
+
+/* ------------------------------ Список чатов ----------------------------- */
+
+function bucketLabel(dateStr) {
+  const date = parseDate(dateStr);
+  if (Number.isNaN(date.getTime())) return t('eduardo.chats.last30');
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86400000);
+  if (diffDays <= 0) return t('eduardo.chats.today');
+  if (diffDays === 1) return t('eduardo.chats.yesterday');
+  if (diffDays <= 7) return t('eduardo.chats.last7');
+  if (diffDays <= 30) return t('eduardo.chats.last30');
+  return date.toLocaleDateString(currentLocale() === 'en' ? 'en-US' : 'ru-RU', { month: 'long', year: 'numeric' });
+}
+
+/** Список диалогов с Eduardo: /eduardo */
+export async function eduardoListView() {
+  const main = shell();
+  main.replaceChildren();
+  mountMobileTop(main);
+
+  if (!state.user) {
+    loginGate(main);
+    return;
+  }
+
+  main.append(
+    header({
+      title: t('header.eduardoList.title'),
+      subtitle: t('header.eduardoList.subtitle'),
+      pill: { icon: 'sparkles', label: t('eduardo.pill') },
+    }),
+  );
+
+  main.append(
+    h(
+      'button',
+      { class: 'btn block eduardo-new-chat-btn', type: 'button', onClick: () => navigate('/eduardo/new') },
+      icon('plus', { size: 16 }),
+      h('span', { text: t('eduardo.newChat') }),
+    ),
+  );
+
+  const list = h('div', { class: 'eduardo-chat-list' }, spinner('Загружаем чаты…'));
+  main.append(list);
+
+  function chatRow(conv) {
+    return h(
+      'div',
+      { class: 'notif eduardo-chat-row', onClick: () => navigate(`/eduardo/${conv.id}`) },
+      h('span', { class: 'ico' }, icon('sparkles', { size: 18 })),
+      h(
+        'div',
+        { style: { flex: 1, minWidth: 0 } },
+        h('div', { class: 'title ellipsis', text: conv.title }),
+        timeEl(conv.updatedAt),
+      ),
+      h(
+        'button',
+        {
+          class: 'icon-btn eduardo-chat-delete',
+          type: 'button',
+          title: t('action.delete'),
+          onClick: async (event) => {
+            event.stopPropagation();
+            const ok = await confirmDialog({
+              title: t('eduardo.chats.deleteTitle'),
+              message: t('eduardo.chats.deleteText'),
+              confirmText: t('action.delete'),
+              danger: true,
+            });
+            if (!ok) return;
+            try {
+              await api.eduardoDeleteConversation(conv.id);
+              toast(t('eduardo.chats.deleted'));
+              load();
+            } catch (error) {
+              toast(error.message, 'error');
+            }
+          },
+        },
+        icon('trash', { size: 14 }),
+      ),
+    );
+  }
+
+  async function load() {
+    try {
+      const { items } = await api.eduardoConversations();
+      if (!items.length) {
+        list.replaceChildren(emptyState('sparkles', t('eduardo.chats.empty.title'), t('eduardo.chats.empty.text')));
+        return;
+      }
+      const groups = new Map();
+      for (const conv of items) {
+        const label = bucketLabel(conv.updatedAt);
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push(conv);
+      }
+      const sections = [...groups].map(([label, convs]) =>
+        h(
+          'div',
+          { class: 'eduardo-chat-group' },
+          h('h4', { class: 'eduardo-chat-group-label', text: label }),
+          convs.map(chatRow),
+        ),
+      );
+      list.replaceChildren(...sections);
+    } catch (error) {
+      list.replaceChildren(emptyState('warn', 'Не удалось загрузить', error.message));
+    }
+  }
+
+  await load();
+}
+
+/** /eduardo/new — создаёт новый диалог и сразу переходит в него. */
+export async function eduardoNewChatView() {
+  if (!state.user) {
+    navigate('/eduardo', { replace: true });
+    return;
+  }
+  try {
+    const conversation = await api.eduardoCreateConversation();
+    navigate(`/eduardo/${conversation.id}`, { replace: true });
+  } catch (error) {
+    toast(error.message, 'error');
+    navigate('/eduardo', { replace: true });
+  }
+}
+
+/* -------------------------------- Переписка ------------------------------- */
 
 const MODELS = [{ id: 'eduardo-s1', label: 'Eduardo-S1' }];
 
@@ -45,6 +200,13 @@ function parseMessageBlocks(content) {
   }
   if (last < content.length) blocks.push({ type: 'text', text: content.slice(last) });
   return blocks.filter((b) => b.type === 'code' || b.text.trim());
+}
+
+/** Рендерит текстовый сегмент ответа как markdown (безопасный HTML). */
+function markdownBlock(text) {
+  const box = h('div', { class: 'eduardo-msg-text' });
+  box.innerHTML = renderMarkdown(text);
+  return box;
 }
 
 function downloadCode(code, ext) {
@@ -146,30 +308,20 @@ function usageBar(usage) {
 
 let refreshAll = () => {};
 
-export async function eduardoView() {
+/** Переписка с Eduardo: /eduardo/:id */
+export async function eduardoThreadView({ params }) {
   const main = shell();
   main.replaceChildren();
   mountMobileTop(main);
 
   if (!state.user) {
-    main.append(
-      header({ title: 'Eduardo', subtitle: 'ИИ-помощник ThePrompt' }),
-      h(
-        'div',
-        { class: 'empty' },
-        h('div', { class: 'big' }, icon('sparkles', { size: 26 })),
-        h('h3', { text: 'Нужен вход' }),
-        h('p', { text: 'Войдите, чтобы пообщаться с Eduardo.' }),
-        h('button', {
-          class: 'btn',
-          style: { marginTop: '14px' },
-          text: 'Войти',
-          onClick: async () => {
-            if (await openAuth()) eduardoView();
-          },
-        }),
-      ),
-    );
+    loginGate(main);
+    return;
+  }
+
+  const conversationId = Number(params.id);
+  if (!Number.isInteger(conversationId) || conversationId <= 0) {
+    main.append(header({ title: 'Eduardo', back: true }), emptyState('warn', 'Чат не найден', ''));
     return;
   }
 
@@ -177,6 +329,7 @@ export async function eduardoView() {
     header({
       title: t('header.eduardo.title'),
       subtitle: t('header.eduardo.subtitle'),
+      back: true,
       pill: { icon: 'sparkles', label: t('eduardo.pill') },
     }),
   );
@@ -196,29 +349,39 @@ export async function eduardoView() {
       { class: 'eduardo-toolbar' },
       h('label', { class: 'field' }, h('span', { class: 'label', text: 'Модель' }), modelSelect),
       h(
-        'button',
-        {
-          class: 'btn ghost small',
-          type: 'button',
-          onClick: async () => {
-            const ok = await confirmDialog({
-              title: 'Очистить чат?',
-              message: 'История переписки с Eduardo будет удалена без возможности восстановления.',
-              confirmText: 'Очистить',
-              danger: true,
-            });
-            if (!ok) return;
-            try {
-              await api.eduardoClearChat();
-              renderEmptyFeed();
-              toast('Чат очищен');
-            } catch (error) {
-              toast(error.message, 'error');
-            }
+        'div',
+        { style: { display: 'flex', gap: '8px' } },
+        h(
+          'button',
+          { class: 'btn ghost small', type: 'button', title: t('eduardo.history'), onClick: () => navigate('/eduardo') },
+          icon('layers', { size: 14 }),
+          h('span', { text: t('eduardo.history') }),
+        ),
+        h(
+          'button',
+          {
+            class: 'btn ghost small',
+            type: 'button',
+            onClick: async () => {
+              const ok = await confirmDialog({
+                title: 'Очистить чат?',
+                message: 'История переписки с Eduardo будет удалена без возможности восстановления.',
+                confirmText: 'Очистить',
+                danger: true,
+              });
+              if (!ok) return;
+              try {
+                await api.eduardoClearChat(conversationId);
+                renderEmptyFeed();
+                toast('Чат очищен');
+              } catch (error) {
+                toast(error.message, 'error');
+              }
+            },
           },
-        },
-        icon('trash', { size: 14 }),
-        h('span', { text: 'Очистить чат' }),
+          icon('trash', { size: 14 }),
+          h('span', { text: 'Очистить чат' }),
+        ),
       ),
     ),
   );
@@ -288,7 +451,7 @@ export async function eduardoView() {
   function assistantRow(message) {
     const box = h('div', { class: 'eduardo-msg' });
     for (const block of parseMessageBlocks(message.content)) {
-      box.append(block.type === 'code' ? codeBlock(block.lang, block.code) : h('p', { class: 'eduardo-msg-text', text: block.text.trim() }));
+      box.append(block.type === 'code' ? codeBlock(block.lang, block.code) : markdownBlock(block.text.trim()));
     }
     if (message.simulated) {
       box.append(
@@ -395,7 +558,7 @@ export async function eduardoView() {
 
   async function loadHistory() {
     try {
-      const { items } = await api.eduardoChat();
+      const { items } = await api.eduardoChat(conversationId);
       if (!items.length) {
         renderEmptyFeed();
       } else {
@@ -424,7 +587,7 @@ export async function eduardoView() {
     typing.scrollIntoView({ block: 'end' });
 
     try {
-      const result = await api.eduardoSend(value);
+      const result = await api.eduardoSend(value, conversationId);
       typing.remove();
       appendBubble(result.message);
       usageSlot.replaceChildren(usageBar(result.usage));

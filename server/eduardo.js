@@ -27,7 +27,17 @@ const CODE_REQUEST_RE = /код|function|функци|программ|script|с
 function simulatedReply(prompt) {
   const banner = 'Демо-ответ Eduardo (на сервере не настроен DEEPSEEK_API_KEY — это шаблон, а не результат работы нейросети).';
   const trimmedPrompt = prompt.length > 200 ? `${prompt.slice(0, 200)}…` : prompt;
-  const lines = [banner, '', `Ваше сообщение: «${trimmedPrompt}»`, '', 'Настоящий ответ появится здесь после настройки ключа API.'];
+  // Заголовок и жирный текст здесь не для красоты — шаблон нарочно использует
+  // markdown, чтобы демо-режим проверял тот же рендеринг, что и настоящие
+  // ответы DeepSeek (см. public/js/markdown.js).
+  const lines = [
+    banner,
+    '',
+    '## Ваш запрос',
+    `Сообщение: **«${trimmedPrompt}»**`,
+    '',
+    'Настоящий ответ появится здесь после настройки ключа API.',
+  ];
   if (CODE_REQUEST_RE.test(prompt)) {
     lines.push(
       '',

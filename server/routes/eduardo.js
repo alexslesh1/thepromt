@@ -92,17 +92,82 @@ function shapeMessage(row) {
   };
 }
 
-/** GET /api/eduardo/chat — история переписки с Eduardo. */
-router.get('/chat', requireAuth, (req, res) => {
+function shapeConversation(row) {
+  return {
+    id: row.id,
+    title: row.title || 'Новый чат',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Возвращает id последнего по активности диалога пользователя, создавая его при отсутствии. */
+function getOrCreateDefaultConversationId(userId) {
+  const existing = get(
+    'SELECT id FROM eduardo_conversations WHERE user_id = $userId ORDER BY updated_at DESC, id DESC LIMIT 1',
+    { userId },
+  );
+  if (existing) return existing.id;
+  const inserted = run('INSERT INTO eduardo_conversations (user_id) VALUES ($userId)', { userId });
+  return inserted.lastInsertRowid;
+}
+
+/** Разбирает ?conversationId= из запроса, проверяя, что диалог принадлежит пользователю. */
+function resolveConversationId(req) {
+  const raw = req.query.conversationId;
+  if (!raw) return getOrCreateDefaultConversationId(req.user.id);
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'Некорректный chatId', 'bad_conversation');
+  const row = get('SELECT id FROM eduardo_conversations WHERE id = $id AND user_id = $userId', { id, userId: req.user.id });
+  if (!row) throw new HttpError(404, 'Чат не найден', 'conversation_not_found');
+  return row.id;
+}
+
+/** GET /api/eduardo/conversations — список чатов пользователя, недавние сверху. */
+router.get('/conversations', requireAuth, (req, res) => {
   const rows = all(
-    `SELECT id, role, content, simulated, created_at FROM eduardo_messages
-     WHERE user_id = $userId ORDER BY id ASC LIMIT 200`,
+    'SELECT * FROM eduardo_conversations WHERE user_id = $userId ORDER BY updated_at DESC, id DESC',
     { userId: req.user.id },
   );
-  res.json({ items: rows.map(shapeMessage) });
+  res.json({ items: rows.map(shapeConversation) });
 });
 
-/** POST /api/eduardo/chat — отправить сообщение в чат с Eduardo. */
+/** POST /api/eduardo/conversations — начать новый чат. */
+router.post('/conversations', requireAuth, (req, res) => {
+  const inserted = run('INSERT INTO eduardo_conversations (user_id) VALUES ($userId)', { userId: req.user.id });
+  const row = get('SELECT * FROM eduardo_conversations WHERE id = $id', { id: inserted.lastInsertRowid });
+  res.status(201).json(shapeConversation(row));
+});
+
+/** DELETE /api/eduardo/conversations/:id — удалить чат целиком вместе с сообщениями. */
+router.delete(
+  '/conversations/:id',
+  requireAuth,
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'Некорректный chatId', 'bad_conversation');
+    const result = run('DELETE FROM eduardo_conversations WHERE id = $id AND user_id = $userId', { id, userId: req.user.id });
+    if (result.changes === 0) throw new HttpError(404, 'Чат не найден', 'conversation_not_found');
+    res.status(204).end();
+  }),
+);
+
+/** GET /api/eduardo/chat?conversationId= — история переписки (по умолчанию — последний активный чат). */
+router.get(
+  '/chat',
+  requireAuth,
+  wrap(async (req, res) => {
+    const conversationId = resolveConversationId(req);
+    const rows = all(
+      `SELECT id, role, content, simulated, created_at FROM eduardo_messages
+       WHERE conversation_id = $conversationId ORDER BY id ASC LIMIT 200`,
+      { conversationId },
+    );
+    res.json({ conversationId, items: rows.map(shapeMessage) });
+  }),
+);
+
+/** POST /api/eduardo/chat?conversationId= — отправить сообщение в чат с Eduardo. */
 router.post(
   '/chat',
   requireAuth,
@@ -113,6 +178,7 @@ router.post(
       throw new HttpError(429, `Слишком много запросов. Попробуйте через ${check.retryAfter} сек.`, 'rate_limited');
     }
     const message = text(req.body?.message, { max: 4000, min: 1, field: 'Сообщение', required: true });
+    const conversationId = resolveConversationId(req);
 
     const period = currentPeriod();
     const { textLimit } = limitsFor(req.user);
@@ -122,14 +188,14 @@ router.post(
       );
     }
 
-    const inserted = run('INSERT INTO eduardo_messages (user_id, role, content) VALUES ($userId, \'user\', $content)', {
-      userId: req.user.id,
-      content: message,
-    });
+    const inserted = run(
+      `INSERT INTO eduardo_messages (user_id, conversation_id, role, content) VALUES ($userId, $conversationId, 'user', $content)`,
+      { userId: req.user.id, conversationId, content: message },
+    );
 
     const history = all(
-      `SELECT role, content FROM eduardo_messages WHERE user_id = $userId ORDER BY id DESC LIMIT $limit`,
-      { userId: req.user.id, limit: CONTEXT_MESSAGES },
+      `SELECT role, content FROM eduardo_messages WHERE conversation_id = $conversationId ORDER BY id DESC LIMIT $limit`,
+      { conversationId, limit: CONTEXT_MESSAGES },
     ).reverse();
 
     let result;
@@ -142,20 +208,35 @@ router.post(
     }
 
     const assistantInsert = run(
-      `INSERT INTO eduardo_messages (user_id, role, content, simulated) VALUES ($userId, 'assistant', $content, $simulated)`,
-      { userId: req.user.id, content: result.text, simulated: result.simulated ? 1 : 0 },
+      `INSERT INTO eduardo_messages (user_id, conversation_id, role, content, simulated)
+       VALUES ($userId, $conversationId, 'assistant', $content, $simulated)`,
+      { userId: req.user.id, conversationId, content: result.text, simulated: result.simulated ? 1 : 0 },
     );
     const assistantRow = get('SELECT * FROM eduardo_messages WHERE id = $id', { id: assistantInsert.lastInsertRowid });
 
-    res.json({ message: shapeMessage(assistantRow), usage: usagePayload(req.user) });
+    // Заголовок чата — из первого сообщения пользователя (как в ChatGPT);
+    // недавно активные чаты поднимаются в списке наверх.
+    const conversation = get('SELECT title FROM eduardo_conversations WHERE id = $id', { id: conversationId });
+    const title = conversation?.title || message.trim().slice(0, 60);
+    run('UPDATE eduardo_conversations SET title = $title, updated_at = datetime(\'now\') WHERE id = $id', {
+      id: conversationId,
+      title,
+    });
+
+    res.json({ conversationId, message: shapeMessage(assistantRow), usage: usagePayload(req.user) });
   }),
 );
 
-/** DELETE /api/eduardo/chat — очистить историю переписки. */
-router.delete('/chat', requireAuth, (req, res) => {
-  run('DELETE FROM eduardo_messages WHERE user_id = $userId', { userId: req.user.id });
-  res.status(204).end();
-});
+/** DELETE /api/eduardo/chat?conversationId= — очистить сообщения текущего чата. */
+router.delete(
+  '/chat',
+  requireAuth,
+  wrap(async (req, res) => {
+    const conversationId = resolveConversationId(req);
+    run('DELETE FROM eduardo_messages WHERE conversation_id = $conversationId', { conversationId });
+    res.status(204).end();
+  }),
+);
 
 /** POST /api/eduardo/image — генерация изображения. */
 router.post(

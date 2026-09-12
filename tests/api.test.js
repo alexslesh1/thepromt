@@ -914,6 +914,52 @@ test('Eduardo: у Pro-пользователя лимиты выше', async () 
   assert.equal(usage.image.limit, 3);
 });
 
+test('Eduardo: несколько чатов — список, создание, изоляция сообщений, удаление', async () => {
+  // Переиспользуем bob/admin вместо новых signUp — экономим общий лимит
+  // /api/auth/request-code на IP теста (см. комментарий у eduardoTools выше).
+  // alice сюда не годится: её раньше банили в тестах модерации, а бан удаляет
+  // серверную сессию — её cookie после этого больше не работает.
+  const created = bob;
+
+  const emptyList = await created.call('GET', '/api/eduardo/conversations');
+  assert.deepEqual(emptyList.items, []);
+
+  // Первое сообщение без conversationId само создаёт дефолтный чат, а его
+  // заголовок берётся из текста сообщения — как в ChatGPT.
+  await created.call('POST', '/api/eduardo/chat', { message: 'Привет, Eduardo' });
+  const afterFirst = await created.call('GET', '/api/eduardo/conversations');
+  assert.equal(afterFirst.items.length, 1);
+  const chatA = afterFirst.items[0];
+  assert.equal(chatA.title, 'Привет, Eduardo');
+
+  const chatB = await created.call('POST', '/api/eduardo/conversations');
+  assert.equal(chatB.title, 'Новый чат');
+
+  const list = await created.call('GET', '/api/eduardo/conversations');
+  assert.equal(list.items.length, 2);
+  assert.equal(list.items[0].id, chatB.id, 'самый недавно активный чат должен быть первым в списке');
+
+  // Сообщения в разных чатах не должны пересекаться.
+  await created.call('POST', `/api/eduardo/chat?conversationId=${chatB.id}`, { message: 'Второй чат' });
+  const historyA = await created.call('GET', `/api/eduardo/chat?conversationId=${chatA.id}`);
+  const historyB = await created.call('GET', `/api/eduardo/chat?conversationId=${chatB.id}`);
+  assert.equal(historyA.items.length, 2, 'первый чат не должен получить сообщение из второго');
+  assert.equal(historyB.items.length, 2);
+  assert.ok(historyB.items[0].content.includes('Второй чат'));
+
+  const notFound = await created.call('GET', '/api/eduardo/chat?conversationId=999999', undefined, { raw: true });
+  assert.equal(notFound.status, 404);
+
+  const forbidden = await admin.call('GET', `/api/eduardo/chat?conversationId=${chatA.id}`, undefined, { raw: true });
+  assert.equal(forbidden.status, 404, 'чужой чат не должен быть виден по id');
+
+  const deleted = await created.call('DELETE', `/api/eduardo/conversations/${chatB.id}`, undefined, { raw: true });
+  assert.equal(deleted.status, 204);
+  const listAfterDelete = await created.call('GET', '/api/eduardo/conversations');
+  assert.equal(listAfterDelete.items.length, 1);
+  assert.equal(listAfterDelete.items[0].id, chatA.id);
+});
+
 test('Eduardo: ежедневная уборка удаляет только счётчики за прошлые месяцы', async () => {
   const userId = bob.user.id;
   const oldPeriod = '2000-01';

@@ -12,7 +12,7 @@ import { profileView } from './views/profile.js';
 import { settingsView } from './views/settings.js';
 import { notificationsView } from './views/notifications.js';
 import { dmListView, dmThreadView } from './views/dm.js';
-import { eduardoView } from './views/eduardo.js';
+import { eduardoListView, eduardoNewChatView, eduardoThreadView } from './views/eduardo.js';
 import { staticView } from './views/static.js';
 import { adminView } from './views/admin.js';
 import { openAuth, openCompleteProfile } from './components/auth.js';
@@ -29,7 +29,9 @@ route('/notifications', notificationsView);
 route('/messages', async () => navigate('/notifications?tab=moderation', { replace: true }));
 route('/dm', dmListView);
 route('/dm/:username', dmThreadView);
-route('/eduardo', eduardoView);
+route('/eduardo', eduardoListView);
+route('/eduardo/new', eduardoNewChatView);
+route('/eduardo/:id', eduardoThreadView);
 route('/admin', adminView);
 
 for (const page of ['about', 'rules', 'privacy', 'terms']) {
