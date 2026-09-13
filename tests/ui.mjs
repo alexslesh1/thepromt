@@ -625,7 +625,10 @@ await step('мобильная версия', async () => {
   await mobile.close();
 });
 
-await browser.close();
+// browser.close() может упасть, если сам браузер уже вылетел (например, был
+// убит по памяти) — в этом случае всё равно печатаем накопленные ошибки,
+// а не молча падаем без единой строки диагностики.
+await browser.close().catch((e) => errors.push(`browser.close(): ${e.message}`));
 
 console.log('\n--- ошибки страницы ---');
 const noise = errors.filter((e) => !e.includes('favicon'));
