@@ -62,7 +62,10 @@ const errors = [];
 const browser = await chromium.launch(
   process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
 );
-const ctx = await browser.newContext({ viewport: { width: 1360, height: 950 }, colorScheme: 'dark' });
+// locale: 'ru-RU' — иначе гость получает язык браузера (новая честная
+// авто-детекция, см. state.js initialLocale/browserLocale), а не всегда
+// русский, и все проверки текста ниже, написанные на русском, ломаются.
+const ctx = await browser.newContext({ viewport: { width: 1360, height: 950 }, colorScheme: 'dark', locale: 'ru-RU' });
 const page = await ctx.newPage();
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 page.on('response', async (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.request().method()} ${r.url()} :: ${(await r.text().catch(() => '')).slice(0, 200)}`); });
@@ -475,7 +478,7 @@ await step('Модели: пользователи их не создают, т�
 await step('Сообщения (ЛС): диалог из профиля и доставка в реальном времени', async () => {
   // Второй пользователь в отдельном контексте браузера — своя сессия/кука,
   // как два разных человека за разными компьютерами.
-  const ctx2 = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const ctx2 = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: 'ru-RU' });
   const page2 = await ctx2.newPage();
   page2.on('pageerror', (e) => errors.push(`dm-second-user pageerror: ${e.message}`));
 
@@ -609,7 +612,7 @@ await step('статические страницы и Ctrl+K', async () => {
 });
 
 await step('мобильная версия', async () => {
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'ru-RU' });
   const mp = await mobile.newPage();
   mp.on('pageerror', (e) => errors.push(`mobile pageerror: ${e.message}`));
   await mp.goto(base, { waitUntil: 'networkidle' });
