@@ -14,7 +14,7 @@ import {
   userById,
   userByUsername,
 } from '../store.js';
-import { LIMITS } from '../constants.js';
+import { LIMITS, SUPPORTED_LOCALES } from '../constants.js';
 import {
   badRequest,
   clampInt,
@@ -156,7 +156,7 @@ meRouter.patch(
       updates.theme = body.theme;
     }
     if (body.locale !== undefined) {
-      if (!['ru', 'en'].includes(body.locale)) throw badRequest('Неизвестный язык');
+      if (!SUPPORTED_LOCALES.includes(body.locale)) throw badRequest('Неизвестный язык');
       updates.locale = body.locale;
     }
     if (body.avatarUrl !== undefined) {

@@ -93,9 +93,11 @@ app.get('/api/meta', (req, res) => {
     devCodesEnabled,
     pro: { priceLabel: config.pro.priceLabel, durationDays: config.pro.durationDays },
     eduardo: {
-      freeTextLimit: config.eduardo.freeTextLimit,
+      freeDailyLimit: config.eduardo.freeDailyLimit,
+      freeWeekLimit: config.eduardo.freeWeekLimit,
+      proDailyLimit: config.eduardo.proDailyLimit,
+      proWeekLimit: config.eduardo.proWeekLimit,
       freeImageLimit: config.eduardo.freeImageLimit,
-      proTextLimit: config.eduardo.proTextLimit,
       proImageLimit: config.eduardo.proImageLimit,
       textSimulated: !config.ai.deepseekKey,
       imageEnabled: config.eduardo.imageEnabled,

@@ -4,14 +4,30 @@ import { api } from './api.js';
 
 const listeners = new Set();
 
+/** Код языка браузера (первые 2 буквы, например 'ja-JP' → 'ja'), если он вообще известен. */
+function browserLocale() {
+  const langs = navigator.languages?.length ? navigator.languages : [navigator.language];
+  for (const lang of langs) {
+    const code = lang?.slice(0, 2).toLowerCase();
+    if (code) return code;
+  }
+  return null;
+}
+
+/**
+ * Гость без сохранённого выбора получает язык браузера — приложение не
+ * навязывает русский всем подряд. Список полных переводов (см. i18n.js)
+ * может не покрывать этот язык — тогда интерфейс честно показывает
+ * английский текст, а не выдуманный перевод (см. t() в i18n.js).
+ */
 function initialLocale() {
   try {
     const saved = localStorage.getItem('ps-locale');
-    if (saved === 'ru' || saved === 'en') return saved;
+    if (saved) return saved;
   } catch {
-    /* приватный режим — не страшно, останемся на языке по умолчанию */
+    /* приватный режим — не страшно, определим язык браузера заново в следующий раз */
   }
-  return 'ru';
+  return browserLocale() || 'ru';
 }
 
 export const state = {
@@ -77,7 +93,7 @@ export function toggleTheme() {
  * самый надёжный способ обновить сразу и каркас, и открытый экран.
  */
 export function applyLocale(locale, { persist = true, reload = true } = {}) {
-  const next = locale === 'en' ? 'en' : 'ru';
+  const next = String(locale || 'ru').toLowerCase().slice(0, 2);
   if (next === state.locale) return;
   state.locale = next;
   document.documentElement.lang = next;
@@ -94,10 +110,6 @@ export function applyLocale(locale, { persist = true, reload = true } = {}) {
     return;
   }
   emit();
-}
-
-export function toggleLocale() {
-  applyLocale(state.locale === 'en' ? 'ru' : 'en');
 }
 
 export async function refreshMe() {

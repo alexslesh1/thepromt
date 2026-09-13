@@ -5,9 +5,9 @@ import { currentPath, navigate } from '../router.js';
 import { applyLocale, applyTheme, isAdmin, setUser, state, subscribe } from '../state.js';
 import { avatar, frag, h, modal, toast } from '../dom.js';
 import { adminBadge, icon, modelTile, proBadge } from '../icons.js';
-import { t, translateModel } from '../i18n.js';
+import { LOCALES, t, translateModel } from '../i18n.js';
 import { openAuth } from './auth.js';
-import { openComposer } from './composer.js';
+import { openComposer, selectWrap } from './composer.js';
 import { openProModal } from './pro.js';
 
 /* ------------------------------ Навигация ------------------------------ */
@@ -238,6 +238,20 @@ function searchBox() {
   );
 }
 
+/** `<select>` со всеми основными языками мира (см. LOCALES в i18n.js) — общий для сайдбара, мобильной шапки и настроек. */
+export function localeSelect({ className = '' } = {}) {
+  const select = h(
+    'select',
+    {
+      class: `select locale-select ${className}`.trim(),
+      'aria-label': t('settings.section.language'),
+      onChange: (event) => applyLocale(event.target.value),
+    },
+    LOCALES.map((locale) => h('option', { value: locale.code, text: locale.name, selected: locale.code === state.locale })),
+  );
+  return selectWrap(select);
+}
+
 function themeCard() {
   const dark = state.theme !== 'light';
   const button = (theme, iconName, label) =>
@@ -253,19 +267,7 @@ function themeCard() {
       icon(iconName, { size: 15 }),
     );
 
-  const en = state.locale === 'en';
-  const localeButton = (locale, label) =>
-    h(
-      'button',
-      {
-        class: locale === state.locale ? 'on' : '',
-        title: label,
-        'aria-label': label,
-        'aria-pressed': locale === state.locale ? 'true' : 'false',
-        onClick: () => applyLocale(locale),
-      },
-      h('span', { text: locale.toUpperCase() }),
-    );
+  const currentLocaleName = LOCALES.find((l) => l.code === state.locale)?.name ?? state.locale.toUpperCase();
 
   return h(
     'div',
@@ -289,10 +291,10 @@ function themeCard() {
       h(
         'span',
         { class: 'grow' },
-        h('span', { class: 't', text: en ? 'English' : 'Русский' }),
+        h('span', { class: 't', text: currentLocaleName }),
         h('span', { class: 's', text: t('settings.section.language') }),
       ),
-      h('span', { class: 'locale-toggle' }, localeButton('ru', 'Русский'), localeButton('en', 'English')),
+      localeSelect(),
     ),
   );
 }
@@ -487,15 +489,7 @@ function mobileTop() {
       },
       icon(state.theme === 'dark' ? 'sun' : 'moon', { size: 19 }),
     ),
-    h(
-      'button',
-      {
-        class: 'icon-btn mobile-locale-btn',
-        title: state.locale === 'en' ? 'Русский' : 'English',
-        onClick: () => applyLocale(state.locale === 'en' ? 'ru' : 'en'),
-      },
-      h('span', { text: state.locale.toUpperCase() }),
-    ),
+    localeSelect({ className: 'mobile-locale-select' }),
     state.user ? null : h('button', { class: 'btn small', text: t('nav.login'), onClick: () => openAuth() }),
   );
 }
@@ -577,7 +571,7 @@ export function refreshChrome() {
 }
 
 /** Заголовок центральной колонки. */
-export function header({ title, subtitle = '', back = false, pill = null, tabs = null }) {
+export function header({ title, subtitle = '', back = false, pill = null, tabs = null, actions = null }) {
   const box = h('div', { class: 'main-header' });
   box.append(
     h(
@@ -597,6 +591,19 @@ export function header({ title, subtitle = '', back = false, pill = null, tabs =
       h('div', {}, h('h1', { text: title }), subtitle ? h('div', { class: 'sub', text: subtitle }) : null),
       h('span', { class: 'spacer' }),
       pill ? h('span', { class: 'header-pill' }, icon(pill.icon ?? 'users', { size: 16 }), h('span', { text: pill.label })) : null,
+      actions
+        ? h(
+            'span',
+            { class: 'header-actions' },
+            actions.map((action) =>
+              h(
+                'button',
+                { class: 'icon-btn', type: 'button', title: action.title, 'aria-label': action.title, onClick: action.onClick },
+                icon(action.icon, { size: 18 }),
+              ),
+            ),
+          )
+        : null,
     ),
   );
   if (tabs) {

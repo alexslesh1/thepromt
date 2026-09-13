@@ -221,6 +221,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .header-pill svg { color: var(--accent); }
 
+.header-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.header-actions .icon-btn {
+  width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-card);
+}
+
 .back-btn {
   border: 1px solid var(--border); background: var(--bg-card); cursor: pointer; color: var(--text);
   width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center;
@@ -270,7 +275,6 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: background .16s ease, color .16s ease;
 }
 .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
-.mobile-locale-btn span { font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 
 /* ------------------------------- Формы --------------------------------- */
 
@@ -569,18 +573,17 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .theme-card .grow { flex: 1; min-width: 0; }
 .theme-card .t { display: block; font-weight: 650; font-size: 14px; }
 .theme-card .s { display: block; font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-/* .locale-toggle — отдельный от .theme-toggle класс (не переиспользуем!):
-   иначe `.theme-toggle button` совпадает сразу с обеими группами кнопок. */
-.theme-toggle, .locale-toggle { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 11px; }
-.theme-toggle button, .locale-toggle button {
+.theme-toggle { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 11px; }
+.theme-toggle button {
   width: 32px; height: 30px; border-radius: 8px; border: 0; cursor: pointer;
   background: none; color: var(--text-muted); display: grid; place-items: center;
   transition: background .16s ease, color .16s ease;
 }
-.theme-toggle button:hover, .locale-toggle button:hover { color: var(--text); }
-.theme-toggle button.on, .locale-toggle button.on { background: var(--gradient); color: #fff; }
+.theme-toggle button:hover { color: var(--text); }
+.theme-toggle button.on { background: var(--gradient); color: #fff; }
 .locale-card { margin-top: 14px; }
-.locale-toggle button { width: auto; padding: 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+.locale-card .select-wrap { flex: none; width: 132px; }
+.locale-select { width: 100%; font-size: 13px; padding: 8px 30px 8px 12px; }
 
 .pro-badge { color: var(--save); flex: none; }
 .admin-badge { color: var(--accent); flex: none; }
@@ -596,11 +599,13 @@ button, input, textarea, select { font: inherit; color: inherit; }
 /* -------------------------------- Eduardo -------------------------------- */
 
 .eduardo-usage { margin: 18px 0; }
-.eduardo-stat + .eduardo-stat { margin-top: 14px; }
+.eduardo-stat + .eduardo-stat,
+.eduardo-limit-row + .eduardo-limit-row { margin-top: 14px; }
 .eduardo-stat-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
 .eduardo-bar { height: 8px; border-radius: 999px; background: var(--bg-secondary); overflow: hidden; }
 .eduardo-bar-fill { height: 100%; border-radius: 999px; background: var(--gradient); transition: width .3s ease; }
 .eduardo-bar-fill.full { background: var(--danger); }
+.eduardo-limit-hint { font-size: 12px; color: var(--text-dim); margin-top: 5px; }
 
 .eduardo-sim-note {
   display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; margin: 8px 0 0;
@@ -995,6 +1000,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .mobile-top .brand-slogan { display: none; }
   .mobile-top .brand-name { font-size: 16px; }
   .mobile-top .spacer { flex: 1; }
+  .mobile-top .select-wrap { flex: none; width: 84px; }
+  .mobile-locale-select { width: 100%; font-size: 12px; padding: 7px 26px 7px 10px; }
 
   .main-header { padding-top: 18px; }
   .main-header h1 { font-size: 25px; }

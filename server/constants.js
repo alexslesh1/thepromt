@@ -187,3 +187,14 @@ export const LIMITS = {
   modelName: 60,
   usernameChangeCooldownDays: 14,
 };
+
+/**
+ * Коды языков интерфейса, которые разрешено сохранять в profile.locale —
+ * держим в паре со списком LOCALES на клиенте (public/js/i18n.js). Список
+ * специально шире, чем языки с полным переводом (см. FULLY_TRANSLATED_LOCALES
+ * там же) — незнакомый сервер локали код не хранит.
+ */
+export const SUPPORTED_LOCALES = [
+  'en', 'ru', 'es', 'zh', 'hi', 'ar', 'pt', 'fr', 'de', 'ja', 'ko', 'it', 'tr',
+  'vi', 'pl', 'uk', 'nl', 'th', 'id', 'fa', 'bn', 'el', 'cs', 'sv', 'ro', 'hu', 'he',
+];

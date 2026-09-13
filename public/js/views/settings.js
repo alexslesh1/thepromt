@@ -1,15 +1,15 @@
 /** Настройки профиля: аватар, баннер, данные аккаунта, тема, выход. */
 
 import { api } from '../api.js';
-import { applyTheme, setUser, state, toggleLocale } from '../state.js';
+import { applyTheme, setUser, state } from '../state.js';
 import { navigate } from '../router.js';
 import { avatar, charCounter, confirmDialog, h, toast } from '../dom.js';
 import { icon } from '../icons.js';
-import { t } from '../i18n.js';
+import { LOCALES, t } from '../i18n.js';
 import { openAuth } from '../components/auth.js';
 import { openImageCropper } from '../components/imageCropper.js';
 import { openProModal } from '../components/pro.js';
-import { header, mountMobileTop, shell } from '../components/shell.js';
+import { header, localeSelect, mountMobileTop, shell } from '../components/shell.js';
 
 /**
  * Загрузка картинки с превью. Перед отправкой на сервер файл проходит через
@@ -256,17 +256,9 @@ export async function settingsView() {
         { class: 'theme-switch' },
         h('span', {
           class: 'grow',
-          text: state.locale === 'en' ? 'English' : 'Русский',
+          text: LOCALES.find((l) => l.code === state.locale)?.name ?? state.locale.toUpperCase(),
         }),
-        h(
-          'button',
-          {
-            class: 'btn ghost small',
-            type: 'button',
-            onClick: () => toggleLocale(),
-          },
-          h('span', { text: state.locale === 'en' ? 'Русский' : 'English' }),
-        ),
+        localeSelect(),
       ),
     );
 

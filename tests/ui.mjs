@@ -336,6 +336,21 @@ await step('Eduardo: список чатов и создание нового ч
   await page.waitForSelector('.eduardo-usage');
 });
 
+await step('Eduardo: заголовок Pro/FREE и шестерёнка с процентами лимитов', async () => {
+  const title = await page.locator('.main-header h1').innerText();
+  if (title !== 'Eduardo FREE') throw new Error(`ожидался заголовок «Eduardo FREE» для бесплатного аккаунта, получено: ${title}`);
+
+  await page.locator('.header-actions .icon-btn').click();
+  await page.waitForSelector('.modal .eduardo-limit-row');
+  const rows = await page.locator('.modal .eduardo-limit-row').count();
+  if (rows !== 2) throw new Error(`в модалке лимитов должно быть 2 строки (день + неделя), получено: ${rows}`);
+  const modalText = await page.locator('.modal').innerText();
+  if (!/%\)/.test(modalText)) throw new Error('в модалке лимитов не видно процентов использования');
+  await shot('19c-eduardo-limits');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.modal', { state: 'detached' });
+});
+
 await step('раздел Eduardo: чат, модель, история, код и заглушки Search/файлов', async () => {
   const modelValue = await page.locator('.eduardo-toolbar select').inputValue();
   if (modelValue !== 'eduardo-s1') throw new Error(`неожиданная модель по умолчанию: ${modelValue}`);
@@ -553,9 +568,10 @@ await step('настройки: пароль и язык интерфейса', 
 
   // Переключение языка перезагружает страницу целиком (самый надёжный способ
   // применить новую локаль везде), поэтому ждём навигацию, а не тост.
+  // Список языков — <select> с основными языками мира (не только ru/en).
   const languageCard = page.locator('.language-card');
   const beforeLang = await languageCard.innerText();
-  await Promise.all([page.waitForLoadState('networkidle'), languageCard.locator('button').click()]);
+  await Promise.all([page.waitForLoadState('networkidle'), languageCard.locator('select').selectOption('en')]);
   await page.waitForSelector('.language-card');
   const afterLang = await page.locator('.language-card').innerText();
   if (beforeLang === afterLang) throw new Error('переключение языка не изменило состояние');
@@ -567,11 +583,15 @@ await step('настройки: пароль и язык интерфейса', 
   if (headerTitle !== 'Settings') throw new Error(`заголовок раздела не переключился на английский: ${headerTitle}`);
   await shot('29-settings-english');
 
+  // Переключаем на французский — проверяем, что список не ограничен ru/en.
+  await Promise.all([page.waitForLoadState('networkidle'), page.locator('.language-card select').selectOption('fr')]);
+  await page.waitForSelector('.language-card');
+  const frHeaderTitle = await page.locator('.main-header h1').innerText();
+  if (frHeaderTitle !== 'Paramètres') throw new Error(`заголовок раздела не переключился на французский: ${frHeaderTitle}`);
+  await shot('29b-settings-french');
+
   // Возвращаем язык обратно, чтобы не влиять на последующие шаги.
-  await Promise.all([
-    page.waitForLoadState('networkidle'),
-    page.locator('.language-card').locator('button').click(),
-  ]);
+  await Promise.all([page.waitForLoadState('networkidle'), page.locator('.language-card select').selectOption('ru')]);
   await page.waitForSelector('.language-card');
 });
 

@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
   pro_since      TEXT,
   pro_expires_at TEXT,
   password_hash  TEXT,                              -- необязательный доп. способ входа
-  locale         TEXT NOT NULL DEFAULT 'ru',         -- ru | en, язык интерфейса
+  locale         TEXT NOT NULL DEFAULT 'ru',         -- язык интерфейса, см. SUPPORTED_LOCALES в constants.js
   username_changed_at TEXT,                          -- когда никнейм меняли в последний раз (не при регистрации)
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
@@ -184,12 +184,29 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Расход по генерации изображений (единственное, что здесь всё ещё считается
+-- помесячно — сама фича пока отключена). Текстовые сообщения считаются
+-- отдельной таблицей eduardo_limits (день + неделя, см. ниже).
 CREATE TABLE IF NOT EXISTS eduardo_usage (
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   period     TEXT NOT NULL,   -- 'YYYY-MM', сбрасывается ежемесячно
   text_used  INTEGER NOT NULL DEFAULT 0,
   image_used INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, period)
+);
+
+-- Лимит текстовых сообщений Eduardo — два независимых скользящих окна,
+-- оба должны быть не исчерпаны:
+--  * daily  — «дневная сессия», 24 часа с daily_started_at (не календарные
+--    сутки: сессия стартует с первого сообщения пользователя);
+--  * week   — сбрасывается каждый понедельник в 00:00 по московскому
+--    времени (week_started_at хранит начало текущей недели в UTC).
+CREATE TABLE IF NOT EXISTS eduardo_limits (
+  user_id          INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  daily_started_at TEXT,
+  daily_used       INTEGER NOT NULL DEFAULT 0,
+  week_started_at  TEXT,
+  week_used        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS eduardo_history (

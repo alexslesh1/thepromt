@@ -5,12 +5,13 @@
  * по референсу интерфейса DeepSeek: пузырь только у сообщения пользователя,
  * ответ ассистента — обычный текст (с markdown-разметкой), код — отдельная
  * карточка с подсветкой, копированием и скачиванием. Генерация изображений —
- * отдельно, «скоро будет доступно». Лимиты — по месяцам, у Pro больше.
+ * отдельно, «скоро будет доступно». Лимиты — дневная сессия (24ч с первого
+ * сообщения) + неделя (сброс по понедельникам, 00:00 МСК), у Pro больше.
  */
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { navigate } from '../router.js';
-import { autoGrow, confirmDialog, copyText, emptyState, h, parseDate, spinner, timeEl, toast } from '../dom.js';
+import { autoGrow, confirmDialog, copyText, emptyState, frag, h, modal, parseDate, spinner, timeEl, toast } from '../dom.js';
 import { icon, proBadge } from '../icons.js';
 import { extensionFor, highlightCode } from '../highlight.js';
 import { renderMarkdown } from '../markdown.js';
@@ -53,6 +54,75 @@ function loginGate(main) {
   );
 }
 
+/** «Eduardo Pro» для подписчиков, «Eduardo FREE» для всех остальных — как просил заказчик, без перевода. */
+const eduardoHeaderTitle = () => `Eduardo ${state.user?.isPro ? 'Pro' : 'FREE'}`;
+
+function formatDuration(ms) {
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
+}
+
+function limitRow(label, stat, hint) {
+  return h(
+    'div',
+    { class: 'eduardo-limit-row' },
+    h(
+      'div',
+      { class: 'eduardo-stat-head' },
+      h('span', { text: label }),
+      h('span', { text: `${stat.used} / ${stat.limit} (${stat.percent}%)` }),
+    ),
+    h('div', { class: 'eduardo-bar' }, h('div', { class: `eduardo-bar-fill${stat.percent >= 100 ? ' full' : ''}`, style: { width: `${stat.percent}%` } })),
+    hint ? h('div', { class: 'eduardo-limit-hint', text: hint }) : null,
+  );
+}
+
+/** Шестерёнка в шапке — процент использования дневной сессии и недели. */
+async function openLimitsModal() {
+  let usage;
+  try {
+    usage = await api.eduardoUsage();
+  } catch (error) {
+    toast(error.message, 'error');
+    return;
+  }
+
+  const dailyHint = usage.daily.active
+    ? `${t('eduardo.limits.resetsIn')} ${formatDuration(new Date(usage.daily.resetAt).getTime() - Date.now())}`
+    : t('eduardo.limits.dailyNotStarted');
+  const weekDate = new Date(usage.week.resetAt).toLocaleDateString(currentLocale(), {
+    day: 'numeric',
+    month: 'long',
+  });
+  const weekHint = `${t('eduardo.limits.weekResetsOn')} ${weekDate} (${t('eduardo.limits.weekResetHint')})`;
+
+  await modal((close) =>
+    frag(
+      h('div', { class: 'modal-head' }, h('h2', { text: t(usage.pro ? 'eduardo.limits.modalTitlePro' : 'eduardo.limits.modalTitleFree') })),
+      limitRow(t('eduardo.limits.daily'), usage.daily, dailyHint),
+      limitRow(t('eduardo.limits.week'), usage.week, weekHint),
+      !usage.pro
+        ? h(
+            'button',
+            {
+              class: 'btn block',
+              style: { marginTop: '6px' },
+              type: 'button',
+              onClick: () => {
+                close();
+                openProModal().then(refreshAll);
+              },
+            },
+            icon('crown', { size: 14 }),
+            h('span', { text: t('eduardo.limits.upgradeCta') }),
+          )
+        : null,
+    ),
+  );
+}
+
 /* ------------------------------ Список чатов ----------------------------- */
 
 function bucketLabel(dateStr) {
@@ -64,7 +134,7 @@ function bucketLabel(dateStr) {
   if (diffDays === 1) return t('eduardo.chats.yesterday');
   if (diffDays <= 7) return t('eduardo.chats.last7');
   if (diffDays <= 30) return t('eduardo.chats.last30');
-  return date.toLocaleDateString(currentLocale() === 'en' ? 'en-US' : 'ru-RU', { month: 'long', year: 'numeric' });
+  return date.toLocaleDateString(currentLocale(), { month: 'long', year: 'numeric' });
 }
 
 /** Список диалогов с Eduardo: /eduardo */
@@ -80,9 +150,10 @@ export async function eduardoListView() {
 
   main.append(
     header({
-      title: t('header.eduardoList.title'),
+      title: eduardoHeaderTitle(),
       subtitle: t('header.eduardoList.subtitle'),
       pill: { icon: 'sparkles', label: t('eduardo.pill') },
+      actions: [{ icon: 'gear', title: t('eduardo.limits.gearTitle'), onClick: openLimitsModal }],
     }),
   );
 
@@ -278,31 +349,26 @@ function codeBlock(lang, code) {
 }
 
 function usageBar(usage) {
-  const stat = (label, used, limit) => {
-    const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-    return h(
-      'div',
-      { class: 'eduardo-stat' },
-      h('div', { class: 'eduardo-stat-head' }, h('span', { text: label }), h('span', { text: `${used} / ${limit}` })),
-      h('div', { class: 'eduardo-bar' }, h('div', { class: `eduardo-bar-fill${pct >= 100 ? ' full' : ''}`, style: { width: `${pct}%` } })),
-    );
-  };
-
   return h(
     'div',
     { class: 'card eduardo-usage' },
     h(
       'div',
       { class: 'card-head' },
-      h('h3', { text: usage.pro ? 'Лимиты Pro' : 'Лимиты этого месяца' }),
+      h('h3', { text: t(usage.pro ? 'eduardo.limits.modalTitlePro' : 'eduardo.limits.modalTitleFree') }),
       usage.pro ? proBadge(15) : null,
       h('span', { class: 'spacer' }),
       !usage.pro
-        ? h('button', { class: 'btn small', onClick: () => openProModal().then(refreshAll) }, icon('crown', { size: 14 }), h('span', { text: 'Оформить Pro' }))
+        ? h(
+            'button',
+            { class: 'btn small', onClick: () => openProModal().then(refreshAll) },
+            icon('crown', { size: 14 }),
+            h('span', { text: t('eduardo.limits.upgradeCta') }),
+          )
         : null,
     ),
-    stat('Сообщения', usage.text.used, usage.text.limit),
-    stat('Изображения', usage.image.used, usage.image.limit),
+    limitRow(t('eduardo.limits.daily'), usage.daily),
+    limitRow(t('eduardo.limits.week'), usage.week),
   );
 }
 
@@ -327,10 +393,11 @@ export async function eduardoThreadView({ params }) {
 
   main.append(
     header({
-      title: t('header.eduardo.title'),
+      title: eduardoHeaderTitle(),
       subtitle: t('header.eduardo.subtitle'),
       back: true,
       pill: { icon: 'sparkles', label: t('eduardo.pill') },
+      actions: [{ icon: 'gear', title: t('eduardo.limits.gearTitle'), onClick: openLimitsModal }],
     }),
   );
 
@@ -595,12 +662,12 @@ export async function eduardoThreadView({ params }) {
       typing.remove();
       error.textContent = err.message;
       error.style.display = 'block';
-      if (err.code === 'limit_reached') {
+      if ((err.code === 'daily_limit_reached' || err.code === 'week_limit_reached') && !state.user?.isPro) {
         error.append(
           h('button', {
             class: 'btn small',
             style: { marginLeft: '10px' },
-            text: 'Оформить Pro',
+            text: t('eduardo.limits.upgradeCta'),
             type: 'button',
             onClick: () => openProModal().then(refreshAll),
           }),

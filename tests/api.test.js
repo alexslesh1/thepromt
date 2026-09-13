@@ -759,9 +759,11 @@ test('справочники для интерфейса', async () => {
   assert.ok(meta.sortOptions.some((s) => s.id === 'new'));
   assert.ok(meta.models.every((m) => m.short && m.color && m.glyph));
   assert.equal(meta.pro.priceLabel, '$10 / месяц');
-  assert.equal(meta.eduardo.freeTextLimit, 5);
+  assert.equal(meta.eduardo.freeDailyLimit, 20);
+  assert.equal(meta.eduardo.freeWeekLimit, 100);
+  assert.equal(meta.eduardo.proDailyLimit, 100);
+  assert.equal(meta.eduardo.proWeekLimit, 500);
   assert.equal(meta.eduardo.freeImageLimit, 1);
-  assert.equal(meta.eduardo.proTextLimit, 20);
   assert.equal(meta.eduardo.proImageLimit, 3);
 
   const sidebar = await client()('GET', '/api/sidebar');
@@ -799,30 +801,35 @@ test('Pro: подписка требует входа', async () => {
   assert.equal(res.status, 401);
 });
 
-test('Eduardo: лимит free-пользователя, демо-режим и история чата', async () => {
+test('Eduardo: дневной лимит free-пользователя, демо-режим и история чата', async () => {
   const created = await signUp('eduardo-free@example.com', 'eduardo_free', 'Едуардо Фри');
 
   const usageBefore = await created.call('GET', '/api/eduardo/usage');
-  assert.equal(usageBefore.text.limit, 5);
-  assert.equal(usageBefore.text.used, 0);
+  assert.equal(usageBefore.daily.limit, 20);
+  assert.equal(usageBefore.daily.used, 0);
+  assert.equal(usageBefore.daily.active, false, 'дневная сессия ещё не началась — сообщений не было');
+  assert.equal(usageBefore.week.limit, 100);
+  assert.equal(usageBefore.week.used, 0);
   assert.equal(usageBefore.pro, false);
 
   let last;
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     last = await created.call('POST', '/api/eduardo/chat', { message: `Сообщение номер ${i}` });
     assert.equal(last.message.role, 'assistant');
     assert.equal(last.message.simulated, true, 'без DEEPSEEK_API_KEY ответ всегда демо-режим');
     assert.ok(last.message.content.includes('Демо-ответ Eduardo'));
   }
-  assert.equal(last.usage.text.used, 5);
-  assert.equal(last.usage.text.remaining, 0);
+  assert.equal(last.usage.daily.used, 20);
+  assert.equal(last.usage.daily.remaining, 0);
+  assert.equal(last.usage.daily.active, true, 'сессия стартовала с первого сообщения');
+  assert.equal(last.usage.week.used, 20, 'недельный счётчик растёт параллельно с дневным');
 
   const overLimit = await created.call('POST', '/api/eduardo/chat', { message: 'Ещё одно сообщение' }, { raw: true });
   assert.equal(overLimit.status, 402);
-  assert.equal(overLimit.data.code, 'limit_reached');
+  assert.equal(overLimit.data.code, 'daily_limit_reached');
 
   const history = await created.call('GET', '/api/eduardo/chat');
-  assert.equal(history.items.length, 10, '5 сообщений пользователя + 5 ответов ассистента');
+  assert.equal(history.items.length, 40, '20 сообщений пользователя + 20 ответов ассистента');
   assert.equal(history.items[0].role, 'user');
   assert.equal(history.items[1].role, 'assistant');
 
@@ -832,26 +839,67 @@ test('Eduardo: лимит free-пользователя, демо-режим и 
   assert.equal(historyAfterClear.items.length, 0);
 });
 
-test('Eduardo: параллельные сообщения не пробивают месячный лимит (гонка)', async () => {
-  const created = await signUp('eduardo-race@example.com', 'eduardo_race', 'Едуардо Рейс');
+test('Eduardo: дневная сессия — скользящие 24 часа, недельный лимит независим от дневного', async () => {
+  // Переиспользуем admin вместо нового signUp — экономим общий лимит
+  // /api/auth/request-code на IP теста (см. комментарий у eduardoTools ниже).
+  // Ролью admin здесь не пользуемся — для лимитов Eduardo она не даёт льгот.
+  const created = admin;
 
-  // Резервирование лимита — один атомарный SQL-запрос (INSERT/UPDATE с
-  // условием прямо в WHERE), поэтому даже параллельные запросы от одного
-  // пользователя не могут все проскочить проверку до того, как счётчик
-  // обновится — race condition из «прочитать, потом отдельно записать»
-  // здесь невозможна в принципе, а не просто маловероятна.
+  // Сессия «началась» 25 часов назад и уже упёрлась в лимит — но раз прошло
+  // больше 24 часов, новое сообщение должно открыть свежую сессию, а не
+  // блокироваться (это не «календарные сутки», а именно скользящее окно).
+  const startedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  dbRun(
+    `INSERT INTO eduardo_limits (user_id, daily_started_at, daily_used) VALUES ($userId, $startedAt, 20)
+     ON CONFLICT(user_id) DO UPDATE SET daily_started_at = $startedAt, daily_used = 20`,
+    { userId: created.user.id, startedAt },
+  );
+  const afterExpiredSession = await created.call('POST', '/api/eduardo/chat', { message: 'Новая сессия спустя 25 часов' });
+  assert.equal(afterExpiredSession.usage.daily.used, 1, 'старая сессия истекла — счётчик начался заново');
+  assert.equal(afterExpiredSession.usage.daily.active, true);
+
+  // Недельный лимит — независимое окно: почти исчерпан при полностью
+  // свободной (только что сброшенной) дневной сессии.
+  dbRun(
+    `UPDATE eduardo_limits SET daily_started_at = NULL, daily_used = 0, week_started_at = datetime('now'), week_used = 99
+     WHERE user_id = $userId`,
+    { userId: created.user.id },
+  );
+  const atWeekLimit = await created.call('POST', '/api/eduardo/chat', { message: 'Сотое сообщение на этой неделе' });
+  assert.equal(atWeekLimit.usage.week.used, 100);
+  assert.equal(atWeekLimit.usage.week.remaining, 0);
+  assert.equal(atWeekLimit.usage.daily.used, 1, 'дневная сессия при этом почти пустая');
+
+  const blockedByWeek = await created.call('POST', '/api/eduardo/chat', { message: 'Сверх недельного лимита' }, { raw: true });
+  assert.equal(blockedByWeek.status, 402);
+  assert.equal(blockedByWeek.data.code, 'week_limit_reached');
+});
+
+test('Eduardo: параллельные сообщения не пробивают дневной лимит (гонка)', async () => {
+  const created = await signUp('eduardo-race@example.com', 'eduardo_race', 'Едуардо Рейс');
+  dbRun(
+    `INSERT INTO eduardo_limits (user_id, daily_started_at, daily_used) VALUES ($userId, datetime('now'), 18)
+     ON CONFLICT(user_id) DO UPDATE SET daily_started_at = datetime('now'), daily_used = 18`,
+    { userId: created.user.id },
+  );
+
+  // Резервирование лимита — один атомарный SQL-запрос (UPDATE с условием
+  // прямо в WHERE), поэтому даже параллельные запросы от одного пользователя
+  // не могут все проскочить проверку до того, как счётчик обновится —
+  // race condition из «прочитать, потом отдельно записать» здесь невозможна
+  // в принципе, а не просто маловероятна.
   const results = await Promise.all(
-    Array.from({ length: 8 }, (_, i) =>
+    Array.from({ length: 5 }, (_, i) =>
       created.call('POST', '/api/eduardo/chat', { message: `Гонка номер ${i}` }, { raw: true }),
     ),
   );
   const okCount = results.filter((r) => r.status === 200).length;
   const limitedCount = results.filter((r) => r.status === 402).length;
-  assert.equal(okCount, 5, 'ровно 5 из 8 параллельных запросов должны пройти при лимите 5');
+  assert.equal(okCount, 2, 'ровно 2 из 5 параллельных запросов должны пройти при остатке 2 в дневном лимите');
   assert.equal(limitedCount, 3);
 
   const usage = await created.call('GET', '/api/eduardo/usage');
-  assert.equal(usage.text.used, 5, 'счётчик не должен уйти выше лимита из-за гонки');
+  assert.equal(usage.daily.used, 20, 'счётчик не должен уйти выше лимита из-за гонки');
 });
 
 test('Eduardo: пустое сообщение отклоняется', async () => {
@@ -910,7 +958,8 @@ test('Eduardo: у Pro-пользователя лимиты выше', async () 
 
   const usage = await created.call('GET', '/api/eduardo/usage');
   assert.equal(usage.pro, true);
-  assert.equal(usage.text.limit, 20);
+  assert.equal(usage.daily.limit, 100);
+  assert.equal(usage.week.limit, 500);
   assert.equal(usage.image.limit, 3);
 });
 
@@ -1254,8 +1303,8 @@ test('вход по паролю: верные данные открывают �
   assert.equal(me.user.username, 'bobik');
 });
 
-test('язык интерфейса: сохраняется через PATCH /api/me', async () => {
-  const bad = await bob.call('PATCH', '/api/me', { locale: 'fr' }, { raw: true });
+test('язык интерфейса: сохраняется через PATCH /api/me, поддерживает основные языки мира', async () => {
+  const bad = await bob.call('PATCH', '/api/me', { locale: 'xx' }, { raw: true });
   assert.equal(bad.status, 400);
 
   const res = await bob.call('PATCH', '/api/me', { locale: 'en' });
@@ -1263,6 +1312,15 @@ test('язык интерфейса: сохраняется через PATCH /ap
 
   const me = await bob.call('GET', '/api/auth/me');
   assert.equal(me.user.locale, 'en');
+
+  // Не только ru/en — любой язык из общего списка (см. SUPPORTED_LOCALES).
+  const fr = await bob.call('PATCH', '/api/me', { locale: 'fr' });
+  assert.equal(fr.user.locale, 'fr');
+  const ja = await bob.call('PATCH', '/api/me', { locale: 'ja' });
+  assert.equal(ja.user.locale, 'ja');
+
+  // Возвращаем язык обратно, чтобы не влиять на последующие тесты.
+  await bob.call('PATCH', '/api/me', { locale: 'ru' });
 });
 
 test('выход закрывает сессию', async () => {
