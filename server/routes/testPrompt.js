@@ -41,6 +41,13 @@ router.post(
       );
     }
 
+    // Свой AbortController вместо AbortSignal.timeout(): у последнего таймер
+    // не привязан к времени жизни запроса и продолжает тикать в фоне даже
+    // после того, как fetch уже завершился — если он срабатывает позже,
+    // Node печатает необработанный DOMException прямо в консоль сервера.
+    // clearTimeout в finally гарантирует, что этого не произойдёт.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.testPrompt.timeoutMs);
     let response;
     try {
       response = await fetch('https://api.deepseek.com/chat/completions', {
@@ -54,7 +61,7 @@ router.post(
           messages: [{ role: 'user', content: prompt }],
           max_tokens: config.testPrompt.maxTokens,
         }),
-        signal: AbortSignal.timeout(config.testPrompt.timeoutMs),
+        signal: controller.signal,
       });
     } catch (err) {
       if (err.name === 'TimeoutError' || err.name === 'AbortError') {
@@ -62,6 +69,8 @@ router.post(
       }
       console.error('[test-prompt] сеть до DeepSeek недоступна:', err);
       throw new HttpError(502, 'Не удалось связаться с DeepSeek. Попробуйте позже.', 'deepseek_unreachable');
+    } finally {
+      clearTimeout(timeout);
     }
 
     if (!response.ok) {

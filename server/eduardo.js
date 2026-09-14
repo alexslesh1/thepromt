@@ -64,6 +64,13 @@ export async function generateChatReply({ messages }) {
     return { text: simulatedReply(lastUser), simulated: true };
   }
 
+  // Свой AbortController вместо AbortSignal.timeout(): у последнего таймер
+  // не привязан к времени жизни запроса и продолжает тикать в фоне даже
+  // после того, как fetch уже завершился — если он срабатывает позже,
+  // Node печатает необработанный DOMException прямо в консоль сервера.
+  // clearTimeout в finally гарантирует, что этого не произойдёт.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
   let res;
   try {
     res = await fetch('https://api.deepseek.com/chat/completions', {
@@ -80,13 +87,15 @@ export async function generateChatReply({ messages }) {
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),
-      signal: AbortSignal.timeout(20000),
+      signal: controller.signal,
     });
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
       throw new Error('DeepSeek не ответил вовремя, попробуйте ещё раз.');
     }
     throw new Error('Не удалось связаться с DeepSeek, попробуйте позже.');
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!res.ok) {
