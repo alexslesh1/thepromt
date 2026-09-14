@@ -1,0 +1,388 @@
+import { DatabaseSync } from 'node:sqlite';
+import { config } from './config.js';
+
+export const db = new DatabaseSync(config.dbFile);
+
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON');
+
+/**
+ * SQLite-функции lower()/COLLATE NOCASE работают только с ASCII,
+ * поэтому регистрируем Unicode-версию для поиска на кириллице.
+ */
+db.function('ulower', { deterministic: true }, (value) => String(value ?? '').toLowerCase());
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS users (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  email          TEXT NOT NULL UNIQUE,
+  username       TEXT UNIQUE,
+  display_name   TEXT,
+  bio            TEXT NOT NULL DEFAULT '',
+  avatar_url     TEXT,
+  banner_url     TEXT,
+  theme          TEXT NOT NULL DEFAULT 'dark',
+  role           TEXT NOT NULL DEFAULT 'user',     -- user | admin
+  status         TEXT NOT NULL DEFAULT 'active',   -- active | warned | banned
+  status_reason  TEXT,
+  is_pro         INTEGER NOT NULL DEFAULT 0,
+  pro_since      TEXT,
+  pro_expires_at TEXT,
+  password_hash  TEXT,                              -- необязательный доп. способ входа
+  locale         TEXT NOT NULL DEFAULT 'ru',         -- язык интерфейса, см. SUPPORTED_LOCALES в constants.js
+  username_changed_at TEXT,                          -- когда никнейм меняли в последний раз (не при регистрации)
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  email       TEXT NOT NULL,
+  code_hash   TEXT NOT NULL,
+  purpose     TEXT NOT NULL DEFAULT 'login',
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  consumed_at TEXT,
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_codes(email, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token      TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_agent TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS posts (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  author_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title          TEXT NOT NULL DEFAULT '',
+  category       TEXT NOT NULL DEFAULT 'other',
+  poll_question  TEXT NOT NULL DEFAULT '',
+  prompt_text    TEXT NOT NULL,
+  model_family   TEXT NOT NULL,
+  model_version  TEXT NOT NULL DEFAULT '',
+  difficulty     TEXT NOT NULL DEFAULT 'beginner', -- beginner | intermediate | advanced
+  description    TEXT NOT NULL DEFAULT '',
+  example_text   TEXT NOT NULL DEFAULT '',
+  example_image  TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at     TEXT,
+  deleted_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  delete_reason  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_model ON posts(model_family);
+CREATE INDEX IF NOT EXISTS idx_posts_difficulty ON posts(difficulty);
+
+CREATE TABLE IF NOT EXISTS post_tags (
+  post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  tag     TEXT NOT NULL,
+  PRIMARY KEY (post_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_post_tags_tag ON post_tags(tag);
+
+CREATE TABLE IF NOT EXISTS likes (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id);
+
+CREATE TABLE IF NOT EXISTS reposts (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  comment    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reposts_post ON reposts(post_id);
+CREATE INDEX IF NOT EXISTS idx_reposts_user ON reposts(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS poll_options (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id  INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  text     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_poll_options_post ON poll_options(post_id, position);
+
+CREATE TABLE IF NOT EXISTS poll_votes (
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  option_id  INTEGER NOT NULL REFERENCES poll_options(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (post_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_option ON poll_votes(option_id);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  author_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  parent_id  INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id, created_at);
+
+CREATE TABLE IF NOT EXISTS follows (
+  follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (follower_id, followee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id      INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+  comment_id   INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+  reason       TEXT NOT NULL,
+  details      TEXT NOT NULL DEFAULT '',
+  status       TEXT NOT NULL DEFAULT 'open',  -- open | resolved | dismissed
+  resolution   TEXT,
+  resolved_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at  TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL,   -- github | google | microsoft | discord
+  provider_user_id  TEXT NOT NULL,
+  email             TEXT,
+  display_name      TEXT,
+  avatar_url        TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (provider, provider_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state       TEXT PRIMARY KEY,
+  provider    TEXT NOT NULL,
+  redirect_to TEXT,
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Расход по генерации изображений (единственное, что здесь всё ещё считается
+-- помесячно — сама фича пока отключена). Текстовые сообщения считаются
+-- отдельной таблицей eduardo_limits (день + неделя, см. ниже).
+CREATE TABLE IF NOT EXISTS eduardo_usage (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period     TEXT NOT NULL,   -- 'YYYY-MM', сбрасывается ежемесячно
+  text_used  INTEGER NOT NULL DEFAULT 0,
+  image_used INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, period)
+);
+
+-- Лимит текстовых сообщений Eduardo — два независимых скользящих окна,
+-- оба должны быть не исчерпаны:
+--  * daily  — «дневная сессия», 24 часа с daily_started_at (не календарные
+--    сутки: сессия стартует с первого сообщения пользователя);
+--  * week   — сбрасывается каждый понедельник в 00:00 по московскому
+--    времени (week_started_at хранит начало текущей недели в UTC).
+CREATE TABLE IF NOT EXISTS eduardo_limits (
+  user_id          INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  daily_started_at TEXT,
+  daily_used       INTEGER NOT NULL DEFAULT 0,
+  week_started_at  TEXT,
+  week_used        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS eduardo_history (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tool       TEXT NOT NULL,   -- qa | test | code | image
+  prompt     TEXT NOT NULL,
+  result     TEXT NOT NULL DEFAULT '',
+  image_url  TEXT,
+  simulated  INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eduardo_history_user ON eduardo_history(user_id, created_at DESC);
+
+-- Отдельные диалоги с Eduardo (как «чаты» в ChatGPT) — пользователь может
+-- вести несколько параллельных переписок и переключаться между ними.
+CREATE TABLE IF NOT EXISTS eduardo_conversations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eduardo_conversations_user ON eduardo_conversations(user_id, updated_at DESC);
+
+-- Сообщения внутри диалога — DeepSeek получает историю конкретного диалога
+-- как контекст (не всю переписку пользователя сразу).
+CREATE TABLE IF NOT EXISTS eduardo_messages (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id INTEGER REFERENCES eduardo_conversations(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL,   -- user | assistant
+  content         TEXT NOT NULL,
+  simulated       INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eduardo_messages_user ON eduardo_messages(user_id, id);
+-- Индекс по conversation_id — не здесь: на существующих базах эта колонка
+-- появляется только миграцией ниже (addColumnIfMissing), а этот блок SCHEMA
+-- выполняется раньше и упадёт на CREATE INDEX по ещё не существующей колонке.
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type       TEXT NOT NULL,   -- report | like | comment | repost | follow | moderation | system
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  link       TEXT,
+  actor_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  read_at    TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
+
+-- owner_id NULL — модель в общем каталоге (её видят все); иначе — личная
+-- модель пользователя, добавленная им в свой профиль.
+CREATE TABLE IF NOT EXISTS models (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  icon_url   TEXT,
+  owner_id   INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_models_owner ON models(owner_id);
+
+-- Личные сообщения (1:1). «Диалог» — не отдельная сущность, а пара
+-- (sender_id, recipient_id) с любой стороны — собирается запросом.
+CREATE TABLE IF NOT EXISTS dm_messages (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body         TEXT NOT NULL,
+  read_at      TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dm_sender ON dm_messages(sender_id, recipient_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_dm_recipient ON dm_messages(recipient_id, sender_id, created_at);
+`;
+
+db.exec(SCHEMA);
+
+/**
+ * Догоняющие миграции: добавляют колонки в базы, созданные предыдущими
+ * версиями схемы. CREATE TABLE IF NOT EXISTS их не добавит.
+ */
+function addColumnIfMissing(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+addColumnIfMissing('posts', 'title', "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('posts', 'category', "TEXT NOT NULL DEFAULT 'other'");
+addColumnIfMissing('posts', 'poll_question', "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('users', 'is_pro', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'pro_since', 'TEXT');
+addColumnIfMissing('users', 'pro_expires_at', 'TEXT');
+addColumnIfMissing('users', 'password_hash', 'TEXT');
+addColumnIfMissing('users', 'locale', "TEXT NOT NULL DEFAULT 'ru'");
+addColumnIfMissing('users', 'username_changed_at', 'TEXT');
+addColumnIfMissing('eduardo_messages', 'conversation_id', 'INTEGER REFERENCES eduardo_conversations(id) ON DELETE CASCADE');
+
+/**
+ * Догоняющая миграция данных (не только схемы): базы, созданные до появления
+ * диалогов, хранят все сообщения Eduardo одним плоским списком на
+ * пользователя (conversation_id ещё NULL). Группируем их в один диалог на
+ * пользователя, чтобы старая переписка не потерялась и появилась в списке
+ * чатов.
+ */
+function backfillEduardoConversations() {
+  const users = db
+    .prepare('SELECT DISTINCT user_id FROM eduardo_messages WHERE conversation_id IS NULL')
+    .all();
+  for (const { user_id: userId } of users) {
+    const first = db
+      .prepare('SELECT content, created_at FROM eduardo_messages WHERE user_id = ? AND conversation_id IS NULL ORDER BY id ASC LIMIT 1')
+      .get(userId);
+    const last = db
+      .prepare('SELECT created_at FROM eduardo_messages WHERE user_id = ? AND conversation_id IS NULL ORDER BY id DESC LIMIT 1')
+      .get(userId);
+    const title = (first?.content ?? '').trim().slice(0, 60) || 'Чат с Eduardo';
+    const inserted = db
+      .prepare('INSERT INTO eduardo_conversations (user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run(userId, title, first?.created_at ?? new Date().toISOString(), last?.created_at ?? new Date().toISOString());
+    db.prepare('UPDATE eduardo_messages SET conversation_id = ? WHERE user_id = ? AND conversation_id IS NULL').run(
+      inserted.lastInsertRowid,
+      userId,
+    );
+  }
+}
+backfillEduardoConversations();
+
+// Индексы по новым колонкам — только после того, как колонки точно существуют.
+db.exec('CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_eduardo_messages_conversation ON eduardo_messages(conversation_id, id)');
+
+/* --- Помощники запросов --- */
+
+/**
+ * Кэш подготовленных выражений. Лишние именованные параметры разрешены:
+ * запросы собираются динамически, и не каждый фильтр попадает в итоговый SQL.
+ */
+const statementCache = new Map();
+
+function prepare(sql) {
+  let statement = statementCache.get(sql);
+  if (!statement) {
+    statement = db.prepare(sql);
+    statement.setAllowUnknownNamedParameters(true);
+    statementCache.set(sql, statement);
+  }
+  return statement;
+}
+
+export const all = (sql, params = {}) => prepare(sql).all(params);
+export const get = (sql, params = {}) => prepare(sql).get(params) ?? null;
+export const run = (sql, params = {}) => prepare(sql).run(params);
+
+/** Выполняет функцию в транзакции. */
+export function transaction(fn) {
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function closeDb() {
+  statementCache.clear();
+  try {
+    db.close();
+  } catch {
+    /* уже закрыта */
+  }
+}
