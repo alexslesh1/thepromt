@@ -756,6 +756,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-size: 12.5px; cursor: pointer; transition: border-color .15s ease, color .15s ease;
 }
 .eduardo-tool-btn:hover { color: var(--text); }
+.eduardo-tool-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .eduardo-composer-tools .spacer { flex: 1; }
 .eduardo-attach-btn { width: 32px; height: 32px; color: var(--text-muted); }
 .eduardo-send-btn {

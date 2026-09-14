@@ -96,6 +96,11 @@ export const config = {
     deepseekKey: env.DEEPSEEK_API_KEY || '',
     deepseekModel: env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
   },
+  search: {
+    // Поиск в интернете для Eduardo (кнопка Search) — Tavily, заточен под
+    // ИИ-агентов, простой REST API. Без ключа — честный демо-режим.
+    tavilyKey: env.TAVILY_API_KEY || '',
+  },
   testPrompt: {
     maxPromptLength: 4000,
     maxTokens: 1000,

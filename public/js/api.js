@@ -108,8 +108,8 @@ export const api = {
   eduardoCreateConversation: () => request('POST', '/api/eduardo/conversations'),
   eduardoDeleteConversation: (id) => request('DELETE', `/api/eduardo/conversations/${id}`),
   eduardoChat: (conversationId) => request('GET', `/api/eduardo/chat${query({ conversationId })}`),
-  eduardoSend: (message, conversationId) =>
-    request('POST', `/api/eduardo/chat${query({ conversationId })}`, { message }),
+  eduardoSend: (message, conversationId, search = false) =>
+    request('POST', `/api/eduardo/chat${query({ conversationId })}`, { message, search }),
   eduardoClearChat: (conversationId) => request('DELETE', `/api/eduardo/chat${query({ conversationId })}`),
   eduardoImage: (prompt) => request('POST', '/api/eduardo/image', { prompt }),
 

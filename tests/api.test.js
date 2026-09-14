@@ -40,6 +40,17 @@ async function withDeepseekKey(fn) {
   }
 }
 
+/** Временно подставляет тестовый ключ Tavily (поиск в интернете) на время выполнения fn(). */
+async function withTavilyKey(fn) {
+  const original = config.search.tavilyKey;
+  config.search.tavilyKey = 'test-tavily-key';
+  try {
+    await fn();
+  } finally {
+    config.search.tavilyKey = original;
+  }
+}
+
 let server;
 let base;
 
@@ -939,6 +950,66 @@ test('Eduardo: сообщение реально уходит в DeepSeek вме
   assert.equal(sentBody.model, 'deepseek-v4-flash');
   assert.equal(sentBody.messages[0].role, 'system');
   assert.equal(sentBody.messages.at(-1).content, 'Настоящий вопрос');
+});
+
+test('Eduardo: поиск в интернете без ключа — честный демо-режим, а не выдуманные источники', async () => {
+  const created = eduardoTools;
+
+  const result = await created.call('POST', '/api/eduardo/chat', { message: 'Какая погода в Москве?', search: true });
+  assert.ok(
+    result.message.content.includes('Поиск в интернете запрошен, но не настроен на сервере'),
+    'без TAVILY_API_KEY ответ должен честно предупреждать, а не выдумывать источники',
+  );
+  assert.ok(!result.message.content.includes('**Источники:**'), 'демо-режим не должен показывать список источников');
+
+  // Без search:true поведение прежнее — никаких пометок про поиск.
+  const withoutSearch = await created.call('POST', '/api/eduardo/chat', { message: 'Просто вопрос без поиска' });
+  assert.ok(!withoutSearch.message.content.includes('Поиск в интернете'), 'без search:true поиск не должен упоминаться вовсе');
+});
+
+test('Eduardo: поиск в интернете реально уходит в Tavily и добавляет источники в ответ', async () => {
+  const created = eduardoTools;
+
+  const originalFetch = globalThis.fetch;
+  let tavilyBody;
+  let deepseekBody;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'https://api.tavily.com/search') {
+      tavilyBody = JSON.parse(init.body);
+      return new Response(
+        JSON.stringify({
+          results: [{ title: 'Погода в Москве — Яндекс', url: 'https://yandex.ru/weather/moscow', content: 'Сейчас +5°C, облачно.' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (String(url) === 'https://api.deepseek.com/chat/completions') {
+      deepseekBody = JSON.parse(init.body);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'В Москве сейчас +5°C и облачно.' } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  };
+
+  let result;
+  try {
+    await withTavilyKey(async () => {
+      await withDeepseekKey(async () => {
+        result = await created.call('POST', '/api/eduardo/chat', { message: 'Какая погода в Москве?', search: true });
+      });
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(tavilyBody.query, 'Какая погода в Москве?');
+  assert.ok(deepseekBody.messages.some((m) => m.role === 'system' && m.content.includes('yandex.ru/weather/moscow')),
+    'результаты поиска должны попадать в контекст модели');
+  assert.ok(result.message.content.startsWith('В Москве сейчас +5°C и облачно.'));
+  assert.ok(result.message.content.includes('**Источники:**'));
+  assert.ok(result.message.content.includes('[Погода в Москве — Яндекс](https://yandex.ru/weather/moscow)'));
 });
 
 test('Eduardo: генерация изображений пока отключена — «скоро будет доступно»', async () => {

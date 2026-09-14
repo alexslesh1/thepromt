@@ -53,12 +53,22 @@ function simulatedReply(prompt) {
   return lines.join('\n');
 }
 
+/** Форматирует результаты веб-поиска в системное сообщение-контекст для модели. */
+function webResultsContext(results) {
+  const items = results
+    .map((r, i) => `${i + 1}. ${r.title} — ${r.url}\n${r.content}`)
+    .join('\n\n');
+  return `Результаты поиска в интернете по запросу пользователя (используй их, где уместно, и указывай источники в ответе):\n\n${items}`;
+}
+
 /**
  * Отправляет DeepSeek всю историю чата (уже включая новое сообщение
- * пользователя) как контекст и возвращает ответ ассистента.
- * @param {{messages: {role: 'user'|'assistant', content: string}[]}} args
+ * пользователя) как контекст и возвращает ответ ассистента. `webResults` —
+ * результаты веб-поиска (см. webSearch ниже), добавляются отдельным
+ * системным сообщением перед историей, если поиск был включён и что-то нашёл.
+ * @param {{messages: {role: 'user'|'assistant', content: string}[], webResults?: {title: string, url: string, content: string}[]}} args
  */
-export async function generateChatReply({ messages }) {
+export async function generateChatReply({ messages, webResults = [] }) {
   if (!config.ai.deepseekKey) {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
     return { text: simulatedReply(lastUser), simulated: true };
@@ -86,6 +96,7 @@ export async function generateChatReply({ messages }) {
         max_tokens: 1200,
         messages: [
           { role: 'system', content: EDUARDO_SYSTEM_PROMPT },
+          ...(webResults.length ? [{ role: 'system', content: webResultsContext(webResults) }] : []),
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),
@@ -105,6 +116,52 @@ export async function generateChatReply({ messages }) {
       throw new Error('DeepSeek не ответил вовремя, попробуйте ещё раз.');
     }
     throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Поиск в интернете для кнопки Search в Eduardo — через Tavily (заточен под
+ * ИИ-агентов, простой REST API). Без TAVILY_API_KEY — честный демо-режим:
+ * пустой список результатов с пометкой simulated, а не выдуманные ссылки.
+ * Сетевые сбои не должны ронять весь ответ Eduardo — при ошибке просто
+ * возвращаем failed:true, и чат продолжает работать без результатов поиска.
+ * @param {string} query
+ */
+export async function webSearch(query) {
+  if (!config.search.tavilyKey) {
+    return { results: [], simulated: true, failed: false };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        api_key: config.search.tavilyKey,
+        query,
+        search_depth: 'basic',
+        max_results: 5,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`[eduardo-search] Tavily вернул ошибку ${res.status}: ${body.slice(0, 300)}`);
+      return { results: [], simulated: false, failed: true };
+    }
+    const json = await res.json();
+    const results = (json.results ?? [])
+      .slice(0, 5)
+      .map((r) => ({ title: String(r.title ?? '').slice(0, 200), url: String(r.url ?? ''), content: String(r.content ?? '').slice(0, 500) }))
+      .filter((r) => r.url);
+    return { results, simulated: false, failed: false };
+  } catch (err) {
+    console.error('[eduardo-search] запрос к Tavily не удался:', err.message);
+    return { results: [], simulated: false, failed: true };
   } finally {
     clearTimeout(timeout);
   }

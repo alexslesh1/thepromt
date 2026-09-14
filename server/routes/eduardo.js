@@ -8,7 +8,7 @@ import express from 'express';
 import { config } from '../config.js';
 import { all, get, run } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { generateChatReply, generateImage } from '../eduardo.js';
+import { generateChatReply, generateImage, webSearch } from '../eduardo.js';
 import { isProActive } from '../store.js';
 import { HttpError, createRateLimiter, limitReached, text, wrap } from '../util.js';
 
@@ -205,6 +205,25 @@ router.get('/usage', requireAuth, (req, res) => {
   res.json(usagePayload(req.user));
 });
 
+/**
+ * Дописывает к тексту ответа список источников (если поиск реально что-то
+ * нашёл) или честную пометку демо/сбоя — так же, как markdown, это часть
+ * content и переживает перезагрузку/переоткрытие чата без отдельной колонки в БД.
+ */
+function appendSearchNote(replyText, search) {
+  if (search.results.length) {
+    const list = search.results.map((r, i) => `${i + 1}. [${r.title || r.url}](${r.url})`).join('\n');
+    return `${replyText}\n\n---\n**Источники:**\n${list}`;
+  }
+  if (search.simulated) {
+    return `${replyText}\n\n> ⚠️ Поиск в интернете запрошен, но не настроен на сервере (демо-режим) — ответ дан без реальных источников.`;
+  }
+  if (search.failed) {
+    return `${replyText}\n\n> ⚠️ Не удалось выполнить поиск в интернете — ответ дан без результатов поиска.`;
+  }
+  return `${replyText}\n\n> Поиск в интернете не нашёл релевантных результатов.`;
+}
+
 function shapeMessage(row) {
   return {
     id: row.id,
@@ -301,6 +320,7 @@ router.post(
       throw new HttpError(429, `Слишком много запросов. Попробуйте через ${check.retryAfter} сек.`, 'rate_limited');
     }
     const message = text(req.body?.message, { max: 4000, min: 1, field: 'Сообщение', required: true });
+    const searchEnabled = req.body?.search === true;
     const conversationId = resolveConversationId(req);
 
     const limits = limitsFor(req.user);
@@ -328,19 +348,25 @@ router.post(
       { conversationId, limit: CONTEXT_MESSAGES },
     ).reverse();
 
+    // webSearch() сама никогда не бросает — сбой поиска не должен ронять
+    // весь ответ Eduardo, просто честно пометится в тексте ниже.
+    const search = searchEnabled ? await webSearch(message) : { results: [], simulated: false, failed: false };
+
     let result;
     try {
-      result = await generateChatReply({ messages: history });
+      result = await generateChatReply({ messages: history, webResults: search.results });
     } catch (err) {
       releaseMessageSlot(req.user.id);
       run('DELETE FROM eduardo_messages WHERE id = $id', { id: inserted.lastInsertRowid });
       throw err;
     }
 
+    const finalText = searchEnabled ? appendSearchNote(result.text, search) : result.text;
+
     const assistantInsert = run(
       `INSERT INTO eduardo_messages (user_id, conversation_id, role, content, simulated)
        VALUES ($userId, $conversationId, 'assistant', $content, $simulated)`,
-      { userId: req.user.id, conversationId, content: result.text, simulated: result.simulated ? 1 : 0 },
+      { userId: req.user.id, conversationId, content: finalText, simulated: result.simulated ? 1 : 0 },
     );
     const assistantRow = get('SELECT * FROM eduardo_messages WHERE id = $id', { id: assistantInsert.lastInsertRowid });
 

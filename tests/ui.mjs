@@ -386,11 +386,22 @@ await step('раздел Eduardo: чат, модель, история, код �
   await page.waitForSelector('.eduardo-row');
   if (await page.locator('.eduardo-row').count() < 4) throw new Error('история чата не подгрузилась после перезагрузки');
 
-  // Search и вложения пока не подключены — честно предупреждаем тостом, а не притворяемся.
-  await page.locator('.eduardo-tool-btn').click();
-  await page.waitForSelector('.toast', { timeout: 4000 });
-  const searchToast = await page.locator('.toast').last().innerText();
-  if (!searchToast.includes('скоро будет доступен')) throw new Error('кнопка Search не предупреждает о «скоро будет доступно»');
+  // Search — реальный тумблер: включаем и отправляем сообщение. Без
+  // TAVILY_API_KEY на сервере ответ должен честно предупредить про демо-режим
+  // поиска, а не выдумать источники.
+  const searchBtn = page.locator('.eduardo-tool-btn');
+  await searchBtn.click();
+  if ((await searchBtn.getAttribute('aria-pressed')) !== 'true') throw new Error('кнопка Search не переключилась в активное состояние');
+  await page.locator('.eduardo-composer-input').fill('Какая погода в Москве?');
+  await page.locator('.eduardo-composer-form button[type=submit]').click();
+  await page.waitForSelector('.eduardo-row.assistant:last-child', { timeout: 8000 });
+  await page.waitForTimeout(500);
+  const searchReply = await page.locator('.eduardo-row.assistant').last().locator('.eduardo-msg-text').first().innerText();
+  if (!searchReply.includes('Поиск в интернете запрошен, но не настроен на сервере')) {
+    throw new Error(`кнопка Search не предупреждает о демо-режиме поиска: ${searchReply}`);
+  }
+  await searchBtn.click();
+  if ((await searchBtn.getAttribute('aria-pressed')) !== 'false') throw new Error('кнопка Search не выключилась обратно');
 
   await page.locator('.eduardo-attach-btn').click();
   await page.waitForSelector('.toast', { timeout: 4000 });

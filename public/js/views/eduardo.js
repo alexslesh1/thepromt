@@ -467,12 +467,21 @@ export async function eduardoThreadView({ params }) {
   });
   const resizeInput = autoGrow(input, 200);
 
+  // Поиск — тумблер: включённый остаётся включённым для следующих сообщений
+  // в этом чате (как в ChatGPT/Claude), пока не выключат вручную.
+  let searchEnabled = false;
   const searchBtn = h(
     'button',
     {
       class: 'eduardo-tool-btn',
       type: 'button',
-      onClick: () => toast('Поиск в интернете скоро будет доступен.'),
+      title: t('eduardo.search.title'),
+      'aria-pressed': 'false',
+      onClick: () => {
+        searchEnabled = !searchEnabled;
+        searchBtn.classList.toggle('active', searchEnabled);
+        searchBtn.setAttribute('aria-pressed', String(searchEnabled));
+      },
     },
     icon('globe', { size: 14 }),
     h('span', { text: 'Search' }),
@@ -559,7 +568,6 @@ export async function eduardoThreadView({ params }) {
         ),
       ),
     );
-    if (message.createdAt) box.append(timeEl(message.createdAt));
     return h('div', { class: 'eduardo-row assistant' }, box);
   }
 
@@ -654,7 +662,7 @@ export async function eduardoThreadView({ params }) {
     typing.scrollIntoView({ block: 'end' });
 
     try {
-      const result = await api.eduardoSend(value, conversationId);
+      const result = await api.eduardoSend(value, conversationId, searchEnabled);
       typing.remove();
       appendBubble(result.message);
       usageSlot.replaceChildren(usageBar(result.usage));
