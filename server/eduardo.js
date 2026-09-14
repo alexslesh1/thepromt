@@ -66,14 +66,16 @@ export async function generateChatReply({ messages }) {
 
   // Свой AbortController вместо AbortSignal.timeout(): у последнего таймер
   // не привязан к времени жизни запроса и продолжает тикать в фоне даже
-  // после того, как fetch уже завершился — если он срабатывает позже,
-  // Node печатает необработанный DOMException прямо в консоль сервера.
-  // clearTimeout в finally гарантирует, что этого не произойдёт.
+  // после того, как всё уже завершилось — если он срабатывает позже, Node
+  // печатает необработанный DOMException прямо в консоль сервера.
+  // clearTimeout в finally гарантирует, что этого не произойдёт. Таймер
+  // держим живым до КОНЦА чтения тела ответа (res.json() ниже), а не
+  // только до получения заголовков — иначе именно чтение тела остаётся
+  // без защиты от зависания и запрос может висеть бесконечно.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
-  let res;
   try {
-    res = await fetch('https://api.deepseek.com/chat/completions', {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -89,23 +91,23 @@ export async function generateChatReply({ messages }) {
       }),
       signal: controller.signal,
     });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`DeepSeek API вернул ошибку ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const json = await res.json();
+    const text = json.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new Error('DeepSeek API вернул пустой ответ');
+    return { text, simulated: false };
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
       throw new Error('DeepSeek не ответил вовремя, попробуйте ещё раз.');
     }
-    throw new Error('Не удалось связаться с DeepSeek, попробуйте позже.');
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`DeepSeek API вернул ошибку ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const json = await res.json();
-  const text = json.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error('DeepSeek API вернул пустой ответ');
-  return { text, simulated: false };
 }
 
 /** Детерминированный, но разный для разных промптов градиент-плейсхолдер. */
